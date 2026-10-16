@@ -3,7 +3,9 @@
   --ref-gray-0: #0e0f11;
   --ref-gray-50: #181a1e;
   --ref-gray-100: #23252b;
+  --ref-gray-125: #282b32;
   --ref-gray-150: #2d3038;
+  --ref-gray-175: #343741;
   --ref-gray-200: #383b44;
   --ref-gray-250: #434651;
   --ref-gray-300: #4d515e;
@@ -14,12 +16,15 @@
   --ref-gray-550: #858b9b;
   --ref-gray-600: #9297a6;
   --ref-gray-650: #9fa3b1;
+  --ref-gray-675: #a3a8b6;
   --ref-gray-700: #acb0bb;
   --ref-gray-750: #b9bcc6;
   --ref-gray-800: #c6c8d0;
   --ref-gray-850: #d3d5db;
   --ref-gray-900: #e0e1e5;
+  --ref-gray-925: #e6e7ea;
   --ref-gray-950: #ecedf0;
+  --ref-gray-975: #f3f4f6;
   --ref-gray-1000: #f9fafa;
 
   /* Accent ramp */

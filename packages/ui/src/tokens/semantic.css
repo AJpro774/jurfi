@@ -2,14 +2,14 @@
 :root,
 [data-theme='dark'] {
   --surface-0: var(--ref-gray-50);
-  --surface-1: var(--ref-gray-100);
+  --surface-1: var(--ref-gray-125);
   --surface-2: var(--ref-gray-150);
-  --surface-3: var(--ref-gray-200);
+  --surface-3: var(--ref-gray-175);
   --text-1: var(--ref-gray-950);
-  --text-2: var(--ref-gray-700);
-  --text-3: var(--ref-gray-500);
-  --border-subtle: var(--ref-gray-150);
-  --border-strong: var(--ref-gray-300);
+  --text-2: var(--ref-gray-750);
+  --text-3: var(--ref-gray-675);
+  --border-subtle: var(--ref-gray-200);
+  --border-strong: var(--ref-gray-550);
   --accent: var(--ref-accent-400);
   --accent-contrast: var(--ref-black);
   --danger: var(--ref-red-300);
@@ -19,14 +19,14 @@
 
 [data-theme='light'] {
   --surface-0: var(--ref-gray-1000);
-  --surface-1: var(--ref-gray-950);
-  --surface-2: var(--ref-gray-900);
-  --surface-3: var(--ref-gray-850);
+  --surface-1: var(--ref-gray-975);
+  --surface-2: var(--ref-gray-950);
+  --surface-3: var(--ref-gray-925);
   --text-1: var(--ref-gray-50);
-  --text-2: var(--ref-gray-300);
-  --text-3: var(--ref-gray-450);
+  --text-2: var(--ref-gray-250);
+  --text-3: var(--ref-gray-350);
   --border-subtle: var(--ref-gray-850);
-  --border-strong: var(--ref-gray-650);
+  --border-strong: var(--ref-gray-500);
   --accent: var(--ref-accent-600);
   --accent-contrast: var(--ref-white);
   --danger: var(--ref-red-700);

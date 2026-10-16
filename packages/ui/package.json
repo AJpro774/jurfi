@@ -19,6 +19,7 @@
   ],
   "scripts": {
     "build": "node build.mjs",
+    "contrast": "node scripts/check-contrast.mjs",
     "lint": "stylelint \"src/**/*.css\" --config ../../stylelint.config.js"
   },
   "devDependencies": {
