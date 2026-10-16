@@ -4,7 +4,7 @@ Source: `apps/samples/pong`. Run it with `pnpm --filter @jurfi/samples dev` and 
 
 ## 1. Canvas and theme
 
-`index.html` holds one `<canvas id="game">`. Colors are read from the `--jurfi-bg`, `--jurfi-fg` and `--jurfi-accent` tokens that `@jurfi/ui` provides.
+`index.html` holds one `<canvas id="game">`. Colors are read from the `--surface-0`, `--text-1` and `--accent` tokens that `@jurfi/ui` provides.
 
 ## 2. Game logic (`game.ts`)
 

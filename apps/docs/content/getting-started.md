@@ -37,5 +37,5 @@ pnpm export-guard # fails if a bundle imports @jurfi/editor
 ## Conventions
 
 - Input, audio and profiling come from `@jurfi/input` (`Input.update()` once per frame, then `action()` / `axis2()`; up is `y = -1`), `@jurfi/audio` (`AudioEngine` with `master`/`sfx`/`music`/`ui` buses, muted under `?test=1`) and `@jurfi/perf` (`Profiler`).
-- Colors come from CSS tokens (`--jurfi-*`). Raw hex/rgb is banned outside `packages/ui/src/tokens`.
+- Colors come from CSS tokens (semantic tokens such as `--surface-0`, `--text-1`, `--accent`; see `packages/ui/MIGRATION.md`). Raw hex/rgb is banned outside `packages/ui/src/tokens`.
 - Next: [Build Pong](./tutorials/pong.md).

@@ -84,9 +84,9 @@ console.info('backend:', detectBackend(), testMode ? '(test mode)' : '');
 
 const css = getComputedStyle(document.body);
 const color = (name: string, fallback: string): string => css.getPropertyValue(name).trim() || fallback;
-const bg = color('--jurfi-bg', 'black');
-const fg = color('--jurfi-fg', 'white');
-const accent = color('--jurfi-accent', 'gray');
+const bg = color('--surface-0', 'black');
+const fg = color('--text-1', 'white');
+const accent = color('--accent', 'gray');
 
 function update(): void {
   input.update();
