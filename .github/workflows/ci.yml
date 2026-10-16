@@ -33,6 +33,11 @@ jobs:
       - uses: jetli/wasm-pack-action@v0.4.0
       - run: pnpm typecheck
       - run: pnpm lint   # eslint (turbo) + stylelint
+      # NOTE: the `contrast` script (packages/ui/scripts/check-contrast.mjs and the
+      # @jurfi/ui package.json "contrast" script) lives on branch ux/tokens and is not
+      # merged here yet. This step will fail until that branch lands; it is valid post-merge.
+      - name: UI contrast check
+        run: pnpm --filter @jurfi/ui contrast
       - run: pnpm test
       - name: Build wasm
         run: pnpm wasm:build
