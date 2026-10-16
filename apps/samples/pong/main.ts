@@ -1,6 +1,6 @@
 import '@jurfi/ui';
 import { detectBackend } from '@jurfi/render';
-import { Input, VirtualButton, VirtualStick } from '@jurfi/input';
+import { Input, VirtualButton } from '@jurfi/input';
 import { AudioEngine } from '@jurfi/audio';
 import { Profiler } from '@jurfi/perf';
 import { PongGame, W, H } from './game';
@@ -18,6 +18,7 @@ canvas.width = W; canvas.height = H;
 const input = new Input({
   element: canvas,
   context: 'gameplay',
+  preventDefaultKeys: true, // stop Space/arrows scrolling the page (all bound keys)
   actionMap: {
     version: 1,
     actions: {
@@ -36,23 +37,19 @@ const input = new Input({
         bindings: [
           { device: 'key', up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD' },
           { device: 'key', up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' },
-          { device: 'touch', control: 'move' },
         ],
       },
     },
   },
 });
-// Touch regions are client pixels over the canvas: a tap serves, a vertical drag moves the paddle.
-const touchStick = input.touch.addStick(new VirtualStick('move', 0, 0, 0, 0, 60));
+// A tap serves (client-pixel region over the canvas); the paddle follows the finger via input.pointer.
 const touchServe = input.touch.addButton(new VirtualButton('serve', 0, 0, 0, 0));
 function layoutTouch(): void {
   const r = canvas.getBoundingClientRect();
-  for (const c of [touchStick, touchServe]) { c.left = r.left; c.top = r.top; c.width = r.width; c.height = r.height; }
+  touchServe.left = r.left; touchServe.top = r.top; touchServe.width = r.width; touchServe.height = r.height;
 }
 layoutTouch();
 addEventListener('resize', layoutTouch);
-// The real Input does not preventDefault; stop the page scrolling on Space/arrows ourselves.
-addEventListener('keydown', (e) => { if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault(); });
 // Touch dragging must not scroll/zoom the page (index.html also sets touch-action: none).
 canvas.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
 
@@ -64,21 +61,13 @@ const sysUpdate = perf.register('update');
 const sysDraw = perf.register('draw');
 const rng = createRng(testMode ? 1337 : (Date.now() & 0xffffffff));
 
-// The audio package plays registered buffers (no oscillator helper), so synthesize two short blips.
-function blip(id: string, freq: number, ms: number): void {
-  const rate = audio.context.sampleRate;
-  const n = Math.floor((rate * ms) / 1000);
-  const buf = audio.context.createBuffer(1, n, rate);
-  const d = buf.getChannelData(0);
-  for (let i = 0; i < n; i++) d[i] = Math.sin((2 * Math.PI * freq * i) / rate) * (1 - i / n) * 0.5;
-  audio.registerBuffer(id, buf);
-}
-blip('hit', 440, 60);
-blip('score', 220, 150);
+// Two short synthesized blips via AudioEngine.playTone (muted by master bus under ?test=1).
+const hitTone = (): void => { audio.playTone({ frequency: 440, duration: 0.06, type: 'square', volume: 0.5, bus: 'sfx' }); };
+const scoreTone = (): void => { audio.playTone({ frequency: 220, duration: 0.15, type: 'sine', volume: 0.5, bus: 'sfx' }); };
 if (!testMode) { audio.setBusVolume('master', 0.6); audio.setBusVolume('sfx', 1); }
 const game = new PongGame(rng, {
-  onHit: () => { audio.play('hit', { bus: 'sfx' }); },
-  onScore: () => { audio.play('score', { bus: 'sfx' }); },
+  onHit: hitTone,
+  onScore: scoreTone,
 });
 console.info('backend:', detectBackend(), testMode ? '(test mode)' : '');
 
@@ -92,7 +81,10 @@ function update(): void {
   input.update();
   const jump = input.action('jump').justPressed;
   const move = input.axis2('move').y; // up = -1, down = +1
-  game.step(STEP, move, null, jump);
+  // Touch: paddle centre follows the finger (canvas-space y); otherwise keyboard axis only.
+  const p = input.pointer;
+  const target = p.active && p.source === 'touch' ? p.ny * H : null;
+  game.step(STEP, move, target, jump);
   clock.tick();
 }
 

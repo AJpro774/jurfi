@@ -15,18 +15,18 @@ Source: `apps/samples/pong`. Run it with `pnpm --filter @jurfi/samples dev` and 
 Input comes from `@jurfi/input`. Define an action map, call `input.update()` once per frame, then query actions:
 
 ```ts
-import { Input, VirtualButton, VirtualStick } from '@jurfi/input';
+import { Input, VirtualButton } from '@jurfi/input';
 
 const input = new Input({
   element: canvas,
   context: 'gameplay',
+  preventDefaultKeys: true,
   actionMap: { version: 1, actions: {
     jump: { type: 'button', contexts: ['gameplay'], bindings: [
       { device: 'key', code: 'Space' }, { device: 'key', code: 'Enter' }, { device: 'touch', control: 'serve' } ] },
     move: { type: 'axis2d', contexts: ['gameplay'], bindings: [
       { device: 'key', up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD' },
-      { device: 'key', up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' },
-      { device: 'touch', control: 'move' } ] },
+      { device: 'key', up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' } ] },
   } },
 });
 
@@ -39,13 +39,13 @@ input.setContext('ui');           // swap contexts, e.g. while a menu is open (g
 
 Because up is `y = -1` and canvas `y` grows downward, `axis2('move').y` can drive the paddle directly.
 
-Touch uses `input.touch`: a `VirtualStick('move', ...)` and a `VirtualButton('serve', ...)` cover the canvas (coordinates are client pixels, so Pong re-lays them out on resize). A tap serves and a vertical drag moves the paddle relative to where the touch started.
+Touch: a `VirtualButton('serve', ...)` covers the canvas (client pixels, re-laid-out on resize) so a tap serves. The paddle follows the finger using `input.pointer` (absolute position, refreshed in `input.update()`): when `pointer.source === 'touch'`, `pointer.ny * H` is passed as the `target` argument of `game.step`, and the paddle moves toward that y. (`VirtualStick.setAbsolute(true)` is an alternative that measures deflection from a fixed anchor.)
 
-The real Input does not call `preventDefault`, so `main.ts` does that for Space and the arrow keys.
+Browser defaults: `preventDefaultKeys: true` makes `Input` call `preventDefault()` on `keydown` for every key bound in the action map (Space, Enter, WASD, arrows), so the page does not scroll. Pass a `KeyboardEvent.code` array to limit it, or change it later with `input.setPreventDefaultKeys()`.
 
 ## 4. Audio
 
-`@jurfi/audio` provides `AudioEngine` with the buses `master`, `sfx`, `music` and `ui`. It plays registered buffers, so Pong synthesizes two short blips with `audio.registerBuffer()` and plays them with `audio.play('hit', { bus: 'sfx' })`. Set levels with `audio.setBusVolume('master', 0.6)`. The engine resumes itself on the first pointer or key gesture, and it is muted when the URL has `?test=1`.
+`@jurfi/audio` provides `AudioEngine` with the buses `master`, `sfx`, `music` and `ui`. Pong synthesizes its two blips with `audio.playTone({ frequency, duration, type, volume, bus: 'sfx' })`, with no buffers to register. Set levels with `audio.setBusVolume('master', 0.6)`. The engine resumes itself on the first pointer or key gesture. With `?test=1` it is muted (master bus gain 0), though the `AudioContext` and voices still exist.
 
 ## 5. Fixed loop and profiling
 
