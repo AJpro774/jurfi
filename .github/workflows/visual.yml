@@ -27,8 +27,15 @@ jobs:
         run: pnpm export-guard
         env:
           REQUIRE_DIST: '1'
+      # NOTE: @jurfi/perf lives on branch aip/input-audio-perf and is not merged
+      # here yet. This step and the JURFI_PERF_DIST env below are written for
+      # when it merges; until then the filter matches no package.
+      - name: Build perf package
+        run: pnpm --filter @jurfi/perf build
       - name: Visual-tests package tests
         run: pnpm --filter @jurfi/visual-tests test
+        env:
+          JURFI_PERF_DIST: ${{ github.workspace }}/packages/perf/dist
       - run: pnpm --filter @jurfi/visual-tests visual
       - uses: actions/upload-artifact@v4
         if: failure()
