@@ -6,7 +6,10 @@
     "packages/wasm/src/index.ts",
     "packages/anim/src/index.ts",
     "packages/script/src/index.ts",
-    "packages/editor/src/index.ts"
+    "packages/editor/src/index.ts",
+    "packages/input/src/index.ts",
+    "packages/audio/src/index.ts",
+    "packages/perf/src/index.ts"
   ],
   "tsconfig": "tooling/tsconfig/typedoc.json",
   "out": "apps/docs/public/api",
