@@ -18,6 +18,13 @@
     "*.css"
   ],
   "scripts": {
-    "build": "node build.mjs"
+    "build": "node build.mjs",
+    "lint": "stylelint \"src/**/*.css\" --config ../../stylelint.config.js"
+  },
+  "devDependencies": {
+    "@jurfi/postcss-config": "workspace:*",
+    "@jurfi/stylelint-config": "workspace:*",
+    "postcss": "^8.5.30",
+    "stylelint": "^17.16.0"
   }
 }
