@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Jurfi layout mock</title>
+  <!-- NOTE: layout.css imports ../src/index.css, whose base.css uses @custom-media.
+       That needs the PostCSS build: run `pnpm --filter @jurfi/ui build` and serve/link
+       the built CSS (../dist/index.css) for exact results; raw src is only approximate. -->
   <link rel="stylesheet" href="layout.css">
 </head>
 <body>
@@ -48,13 +51,13 @@
         <label class="label" for="hp">Health</label><input id="hp" class="field" value="-1" aria-invalid="true">
       </div></section>
 
-    <input type="checkbox" id="dock-toggle" class="dock-toggle" aria-label="Collapse dock">
-    <section class="panel dock">
+    <input type="checkbox" id="dock-toggle" class="dock-toggle" aria-label="Toggle dock" aria-controls="dock">
+    <label class="dock-handle" for="dock-toggle"><span class="dock-handle-text">Toggle dock</span><span class="dock-chevron" aria-hidden="true"></span></label>
+    <section class="panel dock" id="dock">
       <div class="tabs" role="tablist">
         <button type="button" class="tab" role="tab" aria-selected="true">Console</button>
         <button type="button" class="tab" role="tab" aria-selected="false">Profiler</button>
         <button type="button" class="tab" role="tab" aria-selected="false">Timeline</button>
-        <label for="dock-toggle">Toggle dock</label>
       </div>
       <div class="panel-body">[info] Ready.</div>
     </section>

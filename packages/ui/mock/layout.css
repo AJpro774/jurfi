@@ -73,7 +73,7 @@ body {
   grid-template-columns: var(--split-left) var(--splitter) minmax(0, 1fr) var(
       --splitter
     ) var(--split-right);
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) auto auto;
   min-height: 0;
 }
 
@@ -114,10 +114,10 @@ body {
   height: var(--panel-header-h);
   padding-inline: var(--space-3);
   background: var(--panel-header-bg);
-  border-bottom: 1px solid var(--panel-border);
+  border-bottom: 1px solid var(--border-subtle);
   font-size: var(--ref-font-size-2);
   font-weight: var(--ref-font-weight-bold);
-  color: var(--text-2);
+  color: var(--text-1);
 }
 
 .panel-body {
@@ -207,7 +207,7 @@ body {
 .dock {
   grid-column: 1 / -1;
   height: var(--dock-h);
-  border-top: 1px solid var(--border-strong);
+  border-top: 1px solid var(--border-subtle);
   transition:
     transform var(--dur-med) var(--ease-out),
     opacity var(--dur-med) var(--ease-out);
@@ -221,14 +221,42 @@ body {
   pointer-events: none;
 }
 
-.dock .tabs {
+/* Always-visible handle bar (outside the collapsible .dock) */
+.dock-handle {
+  grid-column: 1 / -1;
+  display: flex;
   align-items: center;
+  justify-content: space-between;
+  height: 24px;
+  padding-inline: var(--space-3);
+  background: var(--surface-2);
+  border-top: 1px solid var(--border-strong);
+  color: var(--text-2);
+  font-size: var(--ref-font-size-2);
+  cursor: pointer;
+  user-select: none;
 }
 
-.dock .tabs label {
-  margin-inline-start: auto;
-  color: var(--text-3);
-  cursor: pointer;
+.dock-handle:hover {
+  color: var(--text-1);
+}
+
+.dock-toggle:focus-visible + .dock-handle {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.dock-chevron {
+  width: 6px;
+  height: 6px;
+  border-right: 2px solid currentcolor;
+  border-bottom: 2px solid currentcolor;
+  transform: rotate(45deg);
+  transition: transform var(--dur-med) var(--ease-out);
+}
+
+.dock-toggle:checked + .dock-handle .dock-chevron {
+  transform: rotate(-135deg);
 }
 
 .status {
@@ -256,7 +284,7 @@ body {
 @container app (max-width: 800px) {
   .workspace {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    grid-template-rows: auto minmax(0, 1fr) auto auto auto;
   }
 
   .workspace > .splitter {
