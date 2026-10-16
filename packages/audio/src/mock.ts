@@ -27,6 +27,13 @@ export class MockSource extends MockNode {
   stop(t: number) { this.stopped = t; }
   end() { this.onended?.(); }
 }
+export class MockOscillator extends MockNode {
+  type = 'sine'; frequency = new MockParam(); onended: (() => void) | null = null;
+  started: number | null = null; stopped: number | null = null;
+  start(t: number) { this.started = t; }
+  stop(t: number) { this.stopped = t; }
+  end() { this.onended?.(); }
+}
 export class MockMediaSource extends MockNode {}
 export class MockListener {
   positionX = new MockParam(); positionY = new MockParam(); positionZ = new MockParam();
@@ -40,11 +47,13 @@ export class MockContext {
   listener = new MockListener();
   gains: MockGain[] = [];
   sources: MockSource[] = [];
+  oscillators: MockOscillator[] = [];
   resume = async () => { this.state = 'running'; };
   close = async () => { this.state = 'closed'; };
   createGain() { const g = new MockGain(); this.gains.push(g); return g; }
   createPanner() { return new MockPanner(); }
   createBufferSource() { const s = new MockSource(); this.sources.push(s); return s; }
+  createOscillator() { const o = new MockOscillator(); this.oscillators.push(o); return o; }
   createMediaElementSource() { return new MockMediaSource(); }
   decodeAudioData = async (ab: ArrayBuffer) => ({ duration: 1, byteLength: ab.byteLength }) as unknown;
 }

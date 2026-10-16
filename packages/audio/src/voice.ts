@@ -12,8 +12,10 @@ export class Voice {
   startedAt = 0;
   assetId = '';
   bus: BusName = 'sfx';
-  source: AudioBufferSourceNode | null = null;
+  source: AudioScheduledSourceNode & { playbackRate?: AudioParam; frequency?: AudioParam } | null = null;
   gain: GainNode | null = null;
+  /** Base frequency for tone voices (Hz). */
+  baseFrequency = 0;
   /** @internal */
   onStop: ((v: Voice) => void) | null = null;
   /** @internal */
@@ -24,7 +26,10 @@ export class Voice {
   }
 
   setPitch(rate: number): void {
-    if (this.source && this.ctx) this.source.playbackRate.setTargetAtTime(rate, this.ctx.currentTime, 0.01);
+    if (!this.source || !this.ctx) return;
+    // tones: pitch is a frequency multiplier relative to the base frequency
+    if (this.source.playbackRate) this.source.playbackRate.setTargetAtTime(rate, this.ctx.currentTime, 0.01);
+    else if (this.source.frequency) this.source.frequency.setTargetAtTime(this.baseFrequency * rate, this.ctx.currentTime, 0.01);
   }
 
   /** Stop now, or fade out over `fade` seconds then stop. */

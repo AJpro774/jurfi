@@ -119,4 +119,46 @@ describe('AudioEngine', () => {
     engine.music.stop();
     expect(engine.music.playing).toBe(false);
   });
+
+  it('playTone builds oscillator + gain envelope on the bus', () => {
+    const { ctx, engine } = make();
+    const v = engine.playTone({ frequency: 880, duration: 1, type: 'square', volume: 0.5, bus: 'ui', fadeOut: 0.25 })!;
+    expect(v).not.toBeNull();
+    const o = ctx.oscillators[0]!;
+    expect([o.type, o.frequency.value, o.started, o.stopped]).toEqual(['square', 880, 0, 1]);
+    const g = v.gain as unknown as MockGain;
+    expect(g.gain.calls).toEqual([['set', 0.5, 0], ['set', 0.5, 0.75], ['ramp', 0, 1]]);
+    expect(g.connections).toEqual([engine.bus('ui')]);
+    v.setPitch(2);
+    expect(o.frequency.value).toBe(1760);
+    o.end();
+    expect(v.active).toBe(false);
+  });
+
+  it('playTone defaults and clamps fadeOut', () => {
+    const { ctx, engine } = make();
+    engine.playTone({ duration: 0.01, fadeOut: 5 });
+    const o = ctx.oscillators[0]!;
+    expect([o.type, o.frequency.value, o.stopped]).toEqual(['sine', 440, 0.01]);
+    expect((ctx.gains.at(-1) as MockGain).connections).toEqual([engine.bus('sfx')]);
+  });
+
+  it('playTone respects the voice limit and priority', () => {
+    const { engine } = make();
+    engine.playTone({ priority: 5 });
+    engine.playTone({ priority: 5 });
+    expect(engine.playTone({ priority: 1 })).toBeNull();
+    expect(engine.playTone({ priority: 5 })).not.toBeNull();
+    expect(engine.activeVoices).toBe(2);
+  });
+
+  it('muted engine (test mode) still creates an AudioContext', () => {
+    let created = 0;
+    const ctx = new MockContext();
+    const engine = new AudioEngine({ createContext: () => { created++; return ctx as unknown as AudioContext; }, search: '?test=1', gestureTarget: new EventTarget() });
+    expect(created).toBe(1);
+    expect(engine.isMuted).toBe(true);
+    expect((engine.bus('master') as unknown as MockGain).gain.value).toBe(0);
+    expect(engine.playTone()).not.toBeNull();
+  });
 });

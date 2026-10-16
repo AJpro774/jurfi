@@ -24,6 +24,23 @@ export interface PlayOptions {
   priority?: number;
 }
 
+export interface ToneOptions {
+  /** Hz. Default 440. */
+  frequency?: number;
+  /** Seconds. Default 0.2. */
+  duration?: number;
+  /** Oscillator waveform. Default 'sine'. */
+  type?: OscillatorType;
+  /** Peak gain. Default 1. */
+  volume?: number;
+  /** Default 'sfx'. */
+  bus?: Exclude<BusName, 'master'>;
+  /** Seconds of fade at the end of `duration` (clamped to duration). Default 0.02 (click-free). */
+  fadeOut?: number;
+  /** Voice priority for stealing. Default 0. */
+  priority?: number;
+}
+
 export interface SpatialOptions {
   distanceModel?: 'linear' | 'inverse' | 'exponential';
   refDistance?: number;

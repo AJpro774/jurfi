@@ -1,6 +1,7 @@
 import { Gamepads } from './gamepad';
 import { Keyboard } from './keyboard';
 import { Mouse } from './mouse';
+import { PointerState } from './pointer';
 import { validateActionMap } from './schema';
 import { TouchControls } from './touch';
 import type { ActionDef, ActionMapJSON, ActionState, Binding, InputOptions } from './types';
@@ -21,7 +22,11 @@ export class Input {
   readonly mouse: Mouse;
   readonly gamepads: Gamepads;
   readonly touch: TouchControls;
+  /** Most recently used absolute pointer (mouse or touch): element-relative px and normalized 0..1. Refreshed in update(). */
+  readonly pointer = new PointerState();
   buttonThreshold: number;
+  private preventAuto = false;
+  private readonly bound = new Set<string>();
   private readonly actions = new Map<string, Entry>();
   private readonly list: Entry[] = [];
   private readonly stack: string[] = ['gameplay'];
@@ -34,11 +39,33 @@ export class Input {
     this.buttonThreshold = opts.buttonThreshold ?? 0.5;
     this.keyboard = new Keyboard(target);
     this.mouse = new Mouse(opts.element, doc, target);
-    this.touch = new TouchControls(target);
+    this.touch = new TouchControls(target, opts.element);
     const getPads = opts.getGamepads ?? (() => (typeof navigator !== 'undefined' && navigator.getGamepads ? navigator.getGamepads() : EMPTY));
     this.gamepads = new Gamepads(target, getPads, opts.deadzone ?? 0.15);
     if (opts.context) this.stack[0] = opts.context;
     if (opts.actionMap) this.loadActionMap(opts.actionMap);
+    if (opts.preventDefaultKeys !== undefined) this.setPreventDefaultKeys(opts.preventDefaultKeys);
+  }
+
+  /** Change preventDefault behaviour at runtime: key code list, `true` (all bound keys) or `false`/empty (off). */
+  setPreventDefaultKeys(v: string[] | boolean): void {
+    this.preventAuto = v === true;
+    if (v === true) { this.refreshBound(); this.keyboard.preventKeys = this.bound; }
+    else if (v === false || v.length === 0) this.keyboard.preventKeys = null;
+    else this.keyboard.preventKeys = new Set(v);
+  }
+
+  private refreshBound(): void {
+    if (!this.preventAuto) return;
+    this.bound.clear();
+    for (const e of this.list) {
+      for (const b of e.def.bindings) {
+        if (b.device !== 'key') continue;
+        if ('code' in b) this.bound.add(b.code);
+        else if ('negative' in b) { this.bound.add(b.negative); this.bound.add(b.positive); }
+        else { this.bound.add(b.up); this.bound.add(b.down); this.bound.add(b.left); this.bound.add(b.right); }
+      }
+    }
   }
 
   // ---- action map
@@ -54,11 +81,13 @@ export class Input {
     if (existing && existing.type === def.type) {
       existing.def = copy;
       existing.original = copy.bindings.map((b) => ({ ...b }));
+      this.refreshBound();
       return;
     }
     const e: Entry = { name, type: def.type, pressed: false, justPressed: false, justReleased: false, value: 0, x: 0, y: 0, def: copy, original: copy.bindings.map((b) => ({ ...b })) };
     this.actions.set(name, e);
     this.list.push(e);
+    this.refreshBound();
   }
 
   toJSON(): ActionMapJSON {
@@ -71,18 +100,22 @@ export class Input {
   /** Replace all bindings of an action. */
   rebind(name: string, bindings: Binding[]): void {
     this.entry(name).def.bindings = bindings.map((b) => ({ ...b }));
+    this.refreshBound();
   }
   addBinding(name: string, b: Binding): void {
     this.entry(name).def.bindings.push({ ...b });
+    this.refreshBound();
   }
   removeBinding(name: string, index: number): void {
     this.entry(name).def.bindings.splice(index, 1);
+    this.refreshBound();
   }
   getBindings(name: string): readonly Binding[] {
     return this.entry(name).def.bindings;
   }
   resetBindings(name?: string): void {
     for (const e of name ? [this.entry(name)] : this.list) e.def.bindings = e.original.map((b) => ({ ...b }));
+    this.refreshBound();
   }
   private entry(name: string): Entry {
     const e = this.actions.get(name);
@@ -133,6 +166,10 @@ export class Input {
   update(): void {
     this.gamepads.poll();
     this.mouse.latch();
+    const tp = this.touch.pointer, mp = this.mouse.pointer;
+    if (tp.active && tp.stamp >= mp.stamp) this.pointer.copyFrom(tp);
+    else if (mp.active) this.pointer.copyFrom(mp);
+    else this.pointer.active = false;
     const ctx = this.context;
     for (let i = 0; i < this.list.length; i++) {
       const e = this.list[i] as Entry;
