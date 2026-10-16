@@ -2,8 +2,5 @@
 @import './tokens/semantic.css';
 @import './tokens/motion.css';
 @import './tokens/component.css';
-
-/* Legacy skeleton (--jurfi-*), kept for backwards compatibility with base.css and package exports. */
-@import './tokens/tokens.css';
-@import './tokens/themes.css';
+@import './tokens/deprecated.css';
 @import './base.css';
