@@ -1,0 +1,265 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jurfi.dev/schemas/action-map/v1.json",
+  "title": "Jurfi action map",
+  "description": "Named input actions and their bindings. Schema version 1.",
+  "type": "object",
+  "properties": {
+    "version": {
+      "const": 1,
+      "description": "Action map schema version."
+    },
+    "actions": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/action"
+      }
+    }
+  },
+  "required": [
+    "version",
+    "actions"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "action": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "enum": [
+            "button",
+            "axis1d",
+            "axis2d"
+          ]
+        },
+        "bindings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/binding"
+          }
+        },
+        "contexts": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true,
+          "description": "Active only in these contexts; omit for all."
+        }
+      },
+      "required": [
+        "type",
+        "bindings"
+      ],
+      "additionalProperties": false
+    },
+    "binding": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "device": {
+              "const": "key"
+            },
+            "code": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "device",
+            "code"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "device": {
+              "const": "key"
+            },
+            "negative": {
+              "type": "string",
+              "minLength": 1
+            },
+            "positive": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "device",
+            "negative",
+            "positive"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "device": {
+              "const": "key"
+            },
+            "up": {
+              "type": "string",
+              "minLength": 1
+            },
+            "down": {
+              "type": "string",
+              "minLength": 1
+            },
+            "left": {
+              "type": "string",
+              "minLength": 1
+            },
+            "right": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "device",
+            "up",
+            "down",
+            "left",
+            "right"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "device": {
+              "const": "mouse"
+            },
+            "button": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 31
+            }
+          },
+          "required": [
+            "device",
+            "button"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "device": {
+              "const": "mouse"
+            },
+            "delta": {
+              "enum": [
+                "x",
+                "y",
+                "wheel",
+                "move"
+              ]
+            },
+            "scale": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "device",
+            "delta"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "device": {
+              "const": "gamepad"
+            },
+            "button": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 19
+            },
+            "pad": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 3
+            }
+          },
+          "required": [
+            "device",
+            "button"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "device": {
+              "const": "gamepad"
+            },
+            "axis": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 7
+            },
+            "pad": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 3
+            },
+            "scale": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "device",
+            "axis"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "device": {
+              "const": "gamepad"
+            },
+            "stick": {
+              "enum": [
+                "left",
+                "right"
+              ]
+            },
+            "pad": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 3
+            }
+          },
+          "required": [
+            "device",
+            "stick"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "device": {
+              "const": "touch"
+            },
+            "control": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "device",
+            "control"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}

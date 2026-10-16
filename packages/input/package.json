@@ -1,0 +1,39 @@
+{
+  "name": "@jurfi/input",
+  "version": "0.0.0",
+  "description": "Input: keyboard, mouse, gamepad, touch, action maps",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "schema"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./action-map.schema.json": "./schema/action-map.schema.json"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "schema": "node scripts/gen-schema.mjs"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "tsup": "^9.0.0",
+    "esbuild": "^0.28.2",
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.5",
+    "eslint": "^9.39.0",
+    "@jurfi/tsconfig": "workspace:*",
+    "@jurfi/vitest-config": "workspace:*",
+    "@jurfi/eslint-config": "workspace:*"
+  }
+}
