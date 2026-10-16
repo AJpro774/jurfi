@@ -1,0 +1,39 @@
+{
+  "name": "@jurfi/render",
+  "version": "0.0.0",
+  "description": "three.js renderer (WebGPU, WebGL2 fallback)",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "three": "^0.186.1",
+    "@jurfi/core": "workspace:*"
+  },
+  "devDependencies": {
+    "tsup": "^9.0.0",
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.5",
+    "eslint": "^9.39.0",
+    "@types/three": "^0.186.0",
+    "@jurfi/tsconfig": "workspace:*",
+    "@jurfi/vitest-config": "workspace:*",
+    "@jurfi/eslint-config": "workspace:*"
+  }
+}

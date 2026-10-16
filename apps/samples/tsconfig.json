@@ -1,0 +1,15 @@
+{
+  "extends": "@jurfi/tsconfig/base.json",
+  "compilerOptions": {
+    "types": [
+      "vite/client"
+    ],
+    "noEmit": true
+  },
+  "include": [
+    "src",
+    "*.ts",
+    "pong",
+    "samples"
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "name": "@jurfi/export-guard",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "export-guard": "guard.mjs"
+  },
+  "scripts": {
+    "guard": "node guard.mjs ../../apps/samples/dist",
+    "test": "node --test"
+  }
+}

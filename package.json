@@ -1,0 +1,39 @@
+{
+  "name": "jurfi-monorepo",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.34.6",
+  "engines": {
+    "node": ">=20.19"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint && pnpm lint:style",
+    "lint:style": "stylelint \"**/*.css\" --ignore-path .gitignore",
+    "typecheck": "turbo run typecheck",
+    "docs:api": "typedoc",
+    "dev": "turbo run dev --parallel",
+    "wasm:build": "pnpm --filter @jurfi/wasm build:wasm",
+    "export-guard": "pnpm --filter @jurfi/export-guard run guard",
+    "test:visual": "pnpm --filter @jurfi/visual-tests run visual",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "turbo run build && changeset publish"
+  },
+  "devDependencies": {
+    "turbo": "^2.11.9",
+    "typescript": "~5.9.3",
+    "typedoc": "^0.28.20",
+    "@changesets/cli": "^3.0.3",
+    "stylelint": "^17.16.0",
+    "postcss": "^8.5.30",
+    "prettier": "^3.9.10",
+    "eslint": "^9.39.0",
+    "@types/node": "^22.0.0",
+    "@jurfi/eslint-config": "workspace:*",
+    "@jurfi/stylelint-config": "workspace:*",
+    "@jurfi/postcss-config": "workspace:*",
+    "stylelint-config-standard": "^40.0.0"
+  }
+}

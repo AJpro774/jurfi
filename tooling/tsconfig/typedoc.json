@@ -1,0 +1,14 @@
+{
+  "extends": "./base.json",
+  "compilerOptions": {
+    "baseUrl": "../..",
+    "paths": {
+      "@jurfi/*": [
+        "packages/*/src/index.ts"
+      ]
+    }
+  },
+  "include": [
+    "../../packages/*/src"
+  ]
+}

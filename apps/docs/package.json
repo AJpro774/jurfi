@@ -1,0 +1,25 @@
+{
+  "name": "@jurfi/docs",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@jurfi/ui": "workspace:*"
+  },
+  "devDependencies": {
+    "vite": "^8.3.4",
+    "typescript": "~5.9.3",
+    "eslint": "^9.39.0",
+    "vite-plugin-wasm": "^3.6.0",
+    "vite-plugin-top-level-await": "^1.6.0",
+    "@jurfi/tsconfig": "workspace:*",
+    "@jurfi/eslint-config": "workspace:*"
+  }
+}

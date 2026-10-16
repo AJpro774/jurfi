@@ -1,0 +1,23 @@
+{
+  "name": "@jurfi/ui",
+  "version": "0.0.0",
+  "description": "CSS-only design tokens and themes",
+  "license": "MIT",
+  "files": [
+    "dist"
+  ],
+  "style": "./dist/index.css",
+  "exports": {
+    ".": "./dist/index.css",
+    "./index.css": "./dist/index.css",
+    "./tokens.css": "./dist/tokens/tokens.css",
+    "./themes.css": "./dist/tokens/themes.css",
+    "./*": "./dist/*"
+  },
+  "sideEffects": [
+    "*.css"
+  ],
+  "scripts": {
+    "build": "node build.mjs"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "@jurfi/vitest-config",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "dependencies": {
+    "vitest": "^5.0.5"
+  },
+  "types": "index.d.ts"
+}

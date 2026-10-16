@@ -1,0 +1,13 @@
+{
+  "name": "@jurfi/template-basic",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "echo \"no-op\""
+  },
+  "dependencies": {
+    "@jurfi/core": "workspace:*",
+    "@jurfi/render": "workspace:*"
+  }
+}

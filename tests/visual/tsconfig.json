@@ -1,0 +1,12 @@
+{
+  "extends": "@jurfi/tsconfig/base.json",
+  "compilerOptions": {
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "*.ts",
+    "specs"
+  ]
+}

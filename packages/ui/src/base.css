@@ -1,0 +1,17 @@
+@custom-media --jurfi-compact (max-width: 600px);
+
+.jurfi-panel {
+  background: var(--jurfi-bg);
+  color: var(--jurfi-fg);
+  padding: var(--jurfi-space-3);
+  border-radius: var(--jurfi-radius);
+  font-family: var(--jurfi-font);
+
+  &:hover {
+    outline: 1px solid var(--jurfi-accent);
+  }
+
+  @media (--jurfi-compact) {
+    padding: var(--jurfi-space-2);
+  }
+}

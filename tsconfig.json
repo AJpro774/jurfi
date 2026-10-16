@@ -1,0 +1,6 @@
+{
+  "extends": "@jurfi/tsconfig/base.json",
+  "include": [
+    "tooling/**/*.ts"
+  ]
+}

@@ -1,0 +1,10 @@
+:root,
+[data-theme='dark'] {
+  --jurfi-bg: #14161a;
+  --jurfi-fg: #e8eaed;
+}
+
+[data-theme='light'] {
+  --jurfi-bg: #fafafa;
+  --jurfi-fg: #1b1b1f;
+}

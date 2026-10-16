@@ -1,0 +1,44 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    env:
+      TURBO_CACHE_DIR: .turbo
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: turbo-${{ runner.os }}-
+      - run: pnpm install --frozen-lockfile
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/wasm
+      - uses: jetli/wasm-pack-action@v0.4.0
+      - run: pnpm typecheck
+      - run: pnpm lint   # eslint (turbo) + stylelint
+      - run: pnpm test
+      - name: Build wasm
+        run: pnpm wasm:build
+      - name: Build editor
+        run: pnpm --filter @jurfi/editor-app... build
+      - name: Build samples
+        run: pnpm --filter @jurfi/samples... build
+      - name: Export guard
+        run: pnpm export-guard

@@ -1,0 +1,15 @@
+{
+  "entryPoints": [
+    "packages/core/src/index.ts",
+    "packages/render/src/index.ts",
+    "packages/physics/src/index.ts",
+    "packages/wasm/src/index.ts",
+    "packages/anim/src/index.ts",
+    "packages/script/src/index.ts",
+    "packages/editor/src/index.ts"
+  ],
+  "tsconfig": "tooling/tsconfig/typedoc.json",
+  "out": "apps/docs/public/api",
+  "skipErrorChecking": true,
+  "name": "Jurfi API"
+}

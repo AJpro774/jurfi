@@ -1,0 +1,12 @@
+{
+  "name": "@jurfi/postcss-config",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "dependencies": {
+    "postcss": "^8.5.30",
+    "postcss-nesting": "^14.0.3",
+    "postcss-custom-media": "^12.0.3"
+  }
+}

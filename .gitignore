@@ -1,0 +1,12 @@
+node_modules
+dist
+.turbo
+coverage
+*.tsbuildinfo
+target
+packages/wasm/pkg
+docs-api
+apps/docs/public/api
+tests/visual/test-results
+tests/visual/playwright-report
+.env

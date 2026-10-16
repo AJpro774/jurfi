@@ -1,0 +1,30 @@
+name: Update visual baselines
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
+      options: --ipc=host
+    env:
+      HOME: /root
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @jurfi/visual-tests visual:update
+      - uses: peter-evans/create-pull-request@v7
+        with:
+          branch: chore/update-visual-baselines
+          title: 'chore: update visual baselines'
+          commit-message: 'chore: update visual baselines'
+          body: Automated baseline update from the pinned Playwright image.
+          add-paths: tests/visual/baselines/**

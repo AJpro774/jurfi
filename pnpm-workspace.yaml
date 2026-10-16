@@ -1,0 +1,9 @@
+packages:
+  - packages/*
+  - apps/*
+  - templates/*
+  - tooling/*
+  - tests/visual
+onlyBuiltDependencies:
+  - esbuild
+  - "@swc/core"
