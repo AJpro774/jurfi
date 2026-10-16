@@ -1,4 +1,6 @@
-/* Entry for "@jurfi/ui/tokens.css": non-theme tokens plus deprecated aliases. */
+/* Entry for "@jurfi/ui/tokens.css": non-theme tokens plus deprecated aliases.
+   semantic.css is included so aliases resolve (dark default on :root) without themes.css. */
+@import './semantic.css';
 @import './primitives.css';
 @import './motion.css';
 @import './component.css';

@@ -38,3 +38,10 @@ Values are not pixel-identical in several places (see Note columns).
 No alias in the old files was marked as targeted for the next release, so none were removed in this change;
 all ten variables are still defined. Nothing is scheduled for removal until the maintainers choose a release;
 when they do, delete the entries from `src/tokens/deprecated.css` and this table.
+
+## Default theme (no `data-theme`)
+
+Dark is the true default: `semantic.css` applies the dark tokens on `:root, [data-theme='dark']`
+(cozy density likewise on `:root`), so `--jurfi-*` aliases resolve with no `data-theme` attribute.
+`[data-theme='light']` and `[data-theme='hc']` still override it. `@jurfi/ui/tokens.css` now also imports
+`semantic.css`, so the aliases work even if `themes.css` is not loaded.
