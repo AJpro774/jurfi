@@ -40,5 +40,9 @@ jobs:
         run: pnpm --filter @jurfi/editor-app... build
       - name: Build samples
         run: pnpm --filter @jurfi/samples... build
+      - name: Playwright pin check
+        run: node tooling/check-playwright-pin.mjs
       - name: Export guard
         run: pnpm export-guard
+        env:
+          REQUIRE_DIST: '1'
