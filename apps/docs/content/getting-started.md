@@ -28,7 +28,7 @@ pnpm export-guard # fails if a bundle imports @jurfi/editor
 
 | Path | Purpose |
 | --- | --- |
-| `packages/core`, `render`, `physics`, `anim`, `script`, `ui`, `wasm` | Engine packages |
+| `packages/core`, `render`, `physics`, `anim`, `script`, `ui`, `wasm`, `input`, `audio`, `perf` | Engine packages |
 | `packages/editor` | Editor code. Never import it from games or samples |
 | `apps/samples` | Runnable samples |
 | `apps/docs` | These docs |
@@ -36,6 +36,6 @@ pnpm export-guard # fails if a bundle imports @jurfi/editor
 
 ## Conventions
 
-- Input is keyboard and touch only.
+- Input, audio and profiling come from `@jurfi/input` (`Input.update()` once per frame, then `action()` / `axis2()`; up is `y = -1`), `@jurfi/audio` (`AudioEngine` with `master`/`sfx`/`music`/`ui` buses, muted under `?test=1`) and `@jurfi/perf` (`Profiler`).
 - Colors come from CSS tokens (`--jurfi-*`). Raw hex/rgb is banned outside `packages/ui/src/tokens`.
 - Next: [Build Pong](./tutorials/pong.md).

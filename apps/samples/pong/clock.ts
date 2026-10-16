@@ -1,9 +1,10 @@
-// TODO(Perf): local stub. Replace with the real perf/clock package once its API is final.
+// Fixed clock and seeded RNG for ?test=1 determinism.
+// @jurfi/perf provides a Profiler only (no clock or RNG), so these stay local to the sample.
 export interface Clock { readonly fixed: boolean; readonly dt: number; now(): number }
 
 export const STEP = 1 / 60;
 
-/** Fixed clock for ?test=1 (no wall time); real-time clock otherwise. */
+/** Fixed clock for ?test=1 (no wall time); real-time clock otherwise. Returns seconds. */
 export function createClock(fixed: boolean): Clock & { tick(): void } {
   let t = 0;
   return {

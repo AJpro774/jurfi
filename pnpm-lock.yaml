@@ -118,9 +118,18 @@ importers:
 
   apps/samples:
     dependencies:
+      '@jurfi/audio':
+        specifier: workspace:*
+        version: link:../../packages/audio
       '@jurfi/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@jurfi/input':
+        specifier: workspace:*
+        version: link:../../packages/input
+      '@jurfi/perf':
+        specifier: workspace:*
+        version: link:../../packages/perf
       '@jurfi/physics':
         specifier: workspace:*
         version: link:../../packages/physics

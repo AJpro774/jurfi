@@ -12,25 +12,44 @@ Source: `apps/samples/pong`. Run it with `pnpm --filter @jurfi/samples dev` and 
 
 ## 3. Input
 
-Input goes through a small facade:
+Input comes from `@jurfi/input`. Define an action map, call `input.update()` once per frame, then query actions:
 
 ```ts
-input.action('jump').pressed  // Space / Enter / tap: serve or restart
-input.axis2('move')           // W/S or Up/Down arrows
-input.setContext('ui')        // swap contexts, e.g. while a menu is open
+import { Input, VirtualButton, VirtualStick } from '@jurfi/input';
+
+const input = new Input({
+  element: canvas,
+  context: 'gameplay',
+  actionMap: { version: 1, actions: {
+    jump: { type: 'button', contexts: ['gameplay'], bindings: [
+      { device: 'key', code: 'Space' }, { device: 'key', code: 'Enter' }, { device: 'touch', control: 'serve' } ] },
+    move: { type: 'axis2d', contexts: ['gameplay'], bindings: [
+      { device: 'key', up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD' },
+      { device: 'key', up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' },
+      { device: 'touch', control: 'move' } ] },
+  } },
+});
+
+// each fixed step:
+input.update();
+input.action('jump').justPressed  // Space / Enter / tap: serve or restart
+input.axis2('move').y             // W/S or Up/Down; up is y = -1, down is y = +1
+input.setContext('ui');           // swap contexts, e.g. while a menu is open (gameplay actions read as released)
 ```
 
-Touch: drag vertically anywhere on the canvas and the paddle follows your finger; a tap serves.
+Because up is `y = -1` and canvas `y` grows downward, `axis2('move').y` can drive the paddle directly.
 
-> **TODO:** the facade lives in `pong/stubs/input.ts` until the Input package API is final. Swap the import then.
+Touch uses `input.touch`: a `VirtualStick('move', ...)` and a `VirtualButton('serve', ...)` cover the canvas (coordinates are client pixels, so Pong re-lays them out on resize). A tap serves and a vertical drag moves the paddle relative to where the touch started.
+
+The real Input does not call `preventDefault`, so `main.ts` does that for Space and the arrow keys.
 
 ## 4. Audio
 
-Hits and scores play beeps on the `sfx` bus. The buses are `master`, `sfx`, `music` and `ui`. The stub is in `pong/stubs/audio.ts` (TODO: Audio package).
+`@jurfi/audio` provides `AudioEngine` with the buses `master`, `sfx`, `music` and `ui`. It plays registered buffers, so Pong synthesizes two short blips with `audio.registerBuffer()` and plays them with `audio.play('hit', { bus: 'sfx' })`. Set levels with `audio.setBusVolume('master', 0.6)`. The engine resumes itself on the first pointer or key gesture, and it is muted when the URL has `?test=1`.
 
-## 5. Fixed loop
+## 5. Fixed loop and profiling
 
-`main.ts` runs a 1/60 s accumulator. Clock and seeded RNG are in `pong/stubs/perf.ts` (TODO: Perf package).
+`main.ts` runs a 1/60 s accumulator. `@jurfi/perf` has no clock or RNG, so the fixed clock and seeded RNG live in `pong/clock.ts`. A `Profiler` from `@jurfi/perf` times the `update` and `draw` systems each frame (`perf.beginFrame()`, `perf.begin/end(system)`, `perf.endFrame()`); inspect it with `perf.dump()` or `perf.checkBudgets()`.
 
 ## 6. Test mode
 
@@ -38,8 +57,8 @@ Open `/pong/?test=1`:
 
 - Fixed clock: exactly one 1/60 s step per frame, no wall time.
 - Fixed random seed (1337).
-- Audio muted: no `AudioContext` is created.
-- `window.__pong.advance(n)` steps the game deterministically and `__pong.start()` serves.
+- Audio muted: `AudioEngine` is created with `muted: true` (its master bus is silent).
+- `window.__pong.advance(n)` steps the game deterministically (calling `input.update()` each step) and `__pong.start()` serves. `__pong.perf` exposes the profiler.
 
 Use this for visual and regression tests: the same steps always give the same frame.
 
