@@ -1,10 +1,5 @@
-:root {
-  --jurfi-space-1: 4px;
-  --jurfi-space-2: 8px;
-  --jurfi-space-3: 16px;
-  --jurfi-radius: 6px;
-  --jurfi-font: system-ui, sans-serif;
-  --jurfi-white: #fff;
-  --jurfi-black: #000;
-  --jurfi-accent: rgb(80 140 255);
-}
+/* Entry for "@jurfi/ui/tokens.css": non-theme tokens plus deprecated aliases. */
+@import './primitives.css';
+@import './motion.css';
+@import './component.css';
+@import './deprecated.css';

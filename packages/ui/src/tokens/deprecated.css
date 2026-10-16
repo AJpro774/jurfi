@@ -1,0 +1,13 @@
+/* DEPRECATED: legacy --jurfi-* aliases. Use the new tokens (see MIGRATION.md). */
+:root {
+  --jurfi-space-1: var(--space-1);
+  --jurfi-space-2: var(--space-2);
+  --jurfi-space-3: var(--space-4);
+  --jurfi-radius: var(--ref-radius-3);
+  --jurfi-font: var(--ref-font-sans);
+  --jurfi-white: var(--ref-white);
+  --jurfi-black: var(--ref-black);
+  --jurfi-accent: var(--accent);
+  --jurfi-bg: var(--surface-0);
+  --jurfi-fg: var(--text-1);
+}

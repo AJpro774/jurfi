@@ -1,3 +1,6 @@
-@import './tokens/tokens.css';
-@import './tokens/themes.css';
+@import './tokens/primitives.css';
+@import './tokens/semantic.css';
+@import './tokens/motion.css';
+@import './tokens/component.css';
+@import './tokens/deprecated.css';
 @import './base.css';

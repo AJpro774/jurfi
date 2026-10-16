@@ -1,0 +1,72 @@
+/* Semantic layer: themes and density switch only these tokens. */
+:root,
+[data-theme='dark'] {
+  --surface-0: var(--ref-gray-50);
+  --surface-1: var(--ref-gray-100);
+  --surface-2: var(--ref-gray-150);
+  --surface-3: var(--ref-gray-200);
+  --text-1: var(--ref-gray-950);
+  --text-2: var(--ref-gray-700);
+  --text-3: var(--ref-gray-500);
+  --border-subtle: var(--ref-gray-150);
+  --border-strong: var(--ref-gray-300);
+  --accent: var(--ref-accent-400);
+  --accent-contrast: var(--ref-black);
+  --danger: var(--ref-red-300);
+  --focus-ring: var(--ref-accent-300);
+  --scrim: rgb(0 0 0 / 50%);
+}
+
+[data-theme='light'] {
+  --surface-0: var(--ref-gray-1000);
+  --surface-1: var(--ref-gray-950);
+  --surface-2: var(--ref-gray-900);
+  --surface-3: var(--ref-gray-850);
+  --text-1: var(--ref-gray-50);
+  --text-2: var(--ref-gray-300);
+  --text-3: var(--ref-gray-450);
+  --border-subtle: var(--ref-gray-850);
+  --border-strong: var(--ref-gray-650);
+  --accent: var(--ref-accent-600);
+  --accent-contrast: var(--ref-white);
+  --danger: var(--ref-red-700);
+  --focus-ring: var(--ref-accent-700);
+  --scrim: rgb(0 0 0 / 30%);
+}
+
+[data-theme='hc'] {
+  --surface-0: var(--ref-black);
+  --surface-1: var(--ref-black);
+  --surface-2: var(--ref-gray-50);
+  --surface-3: var(--ref-gray-100);
+  --text-1: var(--ref-white);
+  --text-2: var(--ref-white);
+  --text-3: var(--ref-gray-900);
+  --border-subtle: var(--ref-gray-700);
+  --border-strong: var(--ref-white);
+  --accent: var(--ref-yellow-400);
+  --accent-contrast: var(--ref-black);
+  --danger: var(--ref-red-300);
+  --focus-ring: var(--ref-yellow-400);
+  --scrim: rgb(0 0 0 / 80%);
+}
+
+/* Density (cozy default) */
+:root,
+[data-density='cozy'] {
+  --space-1: var(--ref-space-1);
+  --space-2: var(--ref-space-2);
+  --space-3: var(--ref-space-3);
+  --space-4: var(--ref-space-4);
+  --space-5: var(--ref-space-6);
+  --density-row-h: 28px;
+}
+
+[data-density='compact'] {
+  --space-1: var(--ref-space-1);
+  --space-2: var(--ref-space-1);
+  --space-3: var(--ref-space-2);
+  --space-4: var(--ref-space-3);
+  --space-5: var(--ref-space-4);
+  --density-row-h: 22px;
+}
