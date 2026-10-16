@@ -1,0 +1,284 @@
+@import "../src/index.css";
+
+:root {
+  --split-left: 240px;
+  --split-right: 280px;
+  --split-hier-h: 50%;
+  --dock-h: 200px;
+  --menubar-h: calc(var(--density-row-h) + var(--space-1));
+  --toolbar-h: calc(var(--density-row-h) + var(--space-3));
+  --status-h: var(--density-row-h);
+  --splitter: var(--space-1);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  height: 100dvh;
+  background: var(--surface-0);
+  color: var(--text-1);
+  font: var(--ref-font-size-3) / var(--ref-font-lh-tight) var(--ref-font-sans);
+}
+
+.app {
+  container: app / inline-size;
+  display: grid;
+  grid-template-rows: var(--menubar-h) var(--toolbar-h) 1fr var(--status-h);
+  height: 100%;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-inline: var(--space-3);
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.bar button,
+.tab {
+  height: var(--btn-h);
+  padding-inline: var(--btn-px);
+  border: 1px solid transparent;
+  border-radius: var(--btn-radius);
+  background: transparent;
+  color: var(--btn-fg);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+
+.bar button:active {
+  transform: scale(0.96);
+}
+
+.bar button.primary {
+  background: var(--btn-bg-primary);
+  color: var(--btn-fg-primary);
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: var(--split-left) var(--splitter) minmax(0, 1fr) var(
+      --splitter
+    ) var(--split-right);
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 0;
+}
+
+.left {
+  display: grid;
+  grid-template-rows: var(--split-hier-h) var(--splitter) minmax(0, 1fr);
+  min-height: 0;
+}
+
+.center {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 0;
+}
+
+.splitter {
+  background: var(--border-subtle);
+}
+
+.splitter:hover {
+  background: var(--accent);
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--panel-bg);
+  color: var(--panel-fg);
+  border-radius: var(--panel-radius);
+}
+
+.panel > h2 {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  height: var(--panel-header-h);
+  padding-inline: var(--space-3);
+  background: var(--panel-header-bg);
+  border-bottom: 1px solid var(--panel-border);
+  font-size: var(--ref-font-size-2);
+  font-weight: var(--ref-font-weight-bold);
+  color: var(--text-2);
+}
+
+.panel-body {
+  padding: var(--panel-pad);
+  overflow: auto;
+  flex: 1;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  height: var(--density-row-h);
+  padding-inline: var(--space-2);
+  color: var(--text-2);
+}
+
+.row[aria-selected="true"] {
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+
+.tabs {
+  display: flex;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2) 0;
+  background: var(--panel-header-bg);
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.tab {
+  border-radius: var(--btn-radius) var(--btn-radius) 0 0;
+  color: var(--text-2);
+}
+
+.tab[aria-selected="true"] {
+  background: var(--panel-bg);
+  color: var(--text-1);
+  border-color: var(--panel-border);
+}
+
+.bar button:hover,
+.tab:hover {
+  opacity: 0.8;
+}
+
+.viewport-canvas {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  color: var(--text-3);
+  background: var(--surface-0);
+}
+
+.field {
+  display: block;
+  width: 100%;
+  height: var(--field-h);
+  padding-inline: var(--field-px);
+  background: var(--field-bg);
+  color: var(--field-fg);
+  border: 1px solid var(--field-border);
+  border-radius: var(--field-radius);
+  font: inherit;
+}
+
+.field:focus {
+  border-color: var(--field-border-focus);
+}
+
+.field[aria-invalid="true"] {
+  border-color: var(--field-border-invalid);
+}
+
+.label {
+  display: block;
+  margin-block: var(--space-3) var(--space-1);
+  color: var(--text-3);
+}
+
+/* Bottom dock: collapse via checkbox, animates transform/opacity only */
+.dock-toggle {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.dock {
+  grid-column: 1 / -1;
+  height: var(--dock-h);
+  border-top: 1px solid var(--border-strong);
+  transition:
+    transform var(--dur-med) var(--ease-out),
+    opacity var(--dur-med) var(--ease-out);
+}
+
+.dock-toggle:checked ~ .dock {
+  height: 0;
+  border-top: 0;
+  transform: translateY(100%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.dock .tabs {
+  align-items: center;
+}
+
+.dock .tabs label {
+  margin-inline-start: auto;
+  color: var(--text-3);
+  cursor: pointer;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding-inline: var(--space-3);
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-size: var(--ref-font-size-1);
+}
+
+.status .danger {
+  margin-inline-start: auto;
+}
+
+/* Responsive via container queries on the app container */
+@container app (max-width: 1100px) {
+  .workspace {
+    --split-left: 200px;
+    --split-right: 220px;
+  }
+}
+
+@container app (max-width: 800px) {
+  .workspace {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+  }
+
+  .workspace > .splitter {
+    display: none;
+  }
+
+  .left {
+    grid-template-rows: none;
+    grid-auto-flow: column;
+    height: calc(var(--density-row-h) * 6);
+  }
+
+  .left > .splitter {
+    display: none;
+  }
+
+  .center {
+    order: 1;
+  }
+
+  .inspector {
+    order: 2;
+    height: calc(var(--density-row-h) * 6);
+  }
+}

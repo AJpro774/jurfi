@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en" data-theme="dark" data-density="cozy">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jurfi layout mock</title>
+  <link rel="stylesheet" href="layout.css">
+</head>
+<body>
+<div class="app">
+  <nav class="bar" aria-label="Menu">
+    <button type="button">File</button><button type="button">Edit</button><button type="button">Assets</button>
+    <button type="button">Node</button><button type="button">View</button><button type="button">Help</button>
+  </nav>
+  <div class="bar" role="toolbar" aria-label="Toolbar">
+    <button type="button" class="primary">&#9654; Play</button>
+    <button type="button">Pause</button><button type="button">Step</button>
+    <button type="button">Move</button><button type="button">Rotate</button><button type="button">Scale</button>
+  </div>
+
+  <main class="workspace">
+    <div class="left">
+      <section class="panel"><h2>Hierarchy</h2>
+        <div class="panel-body">
+          <div class="row" aria-selected="true">Scene</div><div class="row">Camera</div><div class="row">Player</div>
+        </div></section>
+      <div class="splitter"></div>
+      <section class="panel"><h2>Asset Browser</h2>
+        <div class="panel-body"><input class="field" placeholder="Search assets" aria-label="Search assets">
+          <div class="row">textures/</div><div class="row">meshes/</div></div></section>
+    </div>
+    <div class="splitter"></div>
+
+    <div class="center">
+      <section class="panel"><h2>Viewport</h2>
+        <div class="tabs" role="tablist">
+          <button type="button" class="tab" role="tab" aria-selected="true">Node Graph</button>
+          <button type="button" class="tab" role="tab" aria-selected="false">Timeline</button>
+          <button type="button" class="tab" role="tab" aria-selected="false">Game</button>
+        </div>
+        <div class="viewport-canvas">Viewport</div></section>
+    </div>
+    <div class="splitter"></div>
+
+    <section class="panel inspector"><h2>Inspector</h2>
+      <div class="panel-body">
+        <label class="label" for="name">Name</label><input id="name" class="field" value="Player">
+        <label class="label" for="hp">Health</label><input id="hp" class="field" value="-1" aria-invalid="true">
+      </div></section>
+
+    <input type="checkbox" id="dock-toggle" class="dock-toggle" aria-label="Collapse dock">
+    <section class="panel dock">
+      <div class="tabs" role="tablist">
+        <button type="button" class="tab" role="tab" aria-selected="true">Console</button>
+        <button type="button" class="tab" role="tab" aria-selected="false">Profiler</button>
+        <button type="button" class="tab" role="tab" aria-selected="false">Timeline</button>
+        <label for="dock-toggle">Toggle dock</label>
+      </div>
+      <div class="panel-body">[info] Ready.</div>
+    </section>
+  </main>
+
+  <footer class="status"><span>Ready</span><span>60 fps</span><span class="danger">0 errors</span></footer>
+</div>
+</body>
+</html>
