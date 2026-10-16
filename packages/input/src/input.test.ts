@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import schemaFile from '../schema/action-map.schema.json';
 import docsSchema from '../../../docs/api/action-map.schema.json';
-import { ACTION_MAP_SCHEMA, Input, validateActionMap, VirtualButton, VirtualStick } from './index';
+import { ACTION_MAP_SCHEMA, Input, TouchControls, validateActionMap, VirtualButton, VirtualStick } from './index';
 import type { ActionMapJSON } from './index';
 
 const map: ActionMapJSON = {
@@ -214,5 +214,103 @@ describe('schema', () => {
   it('schema files are in sync with ACTION_MAP_SCHEMA (run `pnpm --filter @jurfi/input schema`)', () => {
     expect(schemaFile).toEqual(JSON.parse(JSON.stringify(ACTION_MAP_SCHEMA)));
     expect(docsSchema).toEqual(schemaFile);
+  });
+});
+
+describe('preventDefaultKeys', () => {
+  const kd = (target: EventTarget, code: string) => {
+    const e = Object.assign(new Event('keydown', { cancelable: true }), { code });
+    target.dispatchEvent(e);
+    return e.defaultPrevented;
+  };
+  it('is off by default', () => {
+    const { input, target } = setup();
+    expect(kd(target, 'Space')).toBe(false);
+    input.dispose();
+  });
+  it('prevents listed codes only', () => {
+    const target = new EventTarget();
+    new Input({ target, preventDefaultKeys: ['Space', 'ArrowUp'] });
+    expect(kd(target, 'Space')).toBe(true);
+    expect(kd(target, 'ArrowUp')).toBe(true);
+    expect(kd(target, 'KeyQ')).toBe(false);
+  });
+  it('true = bound keys, tracking rebinds', () => {
+    const target = new EventTarget();
+    const input = new Input({ target, actionMap: map, preventDefaultKeys: true });
+    for (const c of ['Space', 'KeyW', 'KeyD', 'KeyQ', 'KeyE', 'Enter']) expect(kd(target, c)).toBe(true);
+    expect(kd(target, 'KeyZ')).toBe(false);
+    input.rebind('jump', [{ device: 'key', code: 'KeyJ' }]);
+    expect(kd(target, 'KeyJ')).toBe(true);
+    expect(kd(target, 'Space')).toBe(false);
+    input.setPreventDefaultKeys(false);
+    expect(kd(target, 'KeyJ')).toBe(false);
+  });
+});
+
+describe('absolute pointer', () => {
+  const rectEl = (el: EventTarget) => Object.assign(el, { getBoundingClientRect: () => ({ left: 100, top: 50, width: 200, height: 100 }) });
+  const touch = (target: EventTarget, type: string, id: number, x: number, y: number) =>
+    target.dispatchEvent(Object.assign(new Event(type), { changedTouches: [{ identifier: id, clientX: x, clientY: y }] }));
+
+  it('mouse position is element-relative and normalized', () => {
+    const target = new EventTarget();
+    const el = rectEl(new EventTarget());
+    const input = new Input({ target, element: el as unknown as Element });
+    el.dispatchEvent(Object.assign(new Event('mousemove'), { clientX: 200, clientY: 100 }));
+    input.update();
+    const p = input.pointer;
+    expect([p.active, p.source, p.x, p.y, p.nx, p.ny]).toEqual([true, 'mouse', 100, 50, 0.5, 0.5]);
+  });
+
+  it('touch pool tracks multiple touches without reallocating', () => {
+    const target = new EventTarget();
+    const el = rectEl(new EventTarget());
+    const input = new Input({ target, element: el as unknown as Element });
+    const pool = input.touch.touches.slice();
+    touch(target, 'touchstart', 7, 150, 75);
+    touch(target, 'touchstart', 8, 300, 150);
+    expect(input.touch.touchCount).toBe(2);
+    const a = input.touch.getTouch(7)!;
+    expect([a.x, a.y, a.nx, a.ny]).toEqual([50, 25, 0.25, 0.25]);
+    touch(target, 'touchmove', 7, 200, 100);
+    expect(a.nx).toBe(0.5);
+    input.update();
+    expect(input.pointer.source).toBe('touch');
+    touch(target, 'touchend', 8, 0, 0);
+    touch(target, 'touchend', 7, 0, 0);
+    expect(input.touch.touchCount).toBe(0);
+    input.update();
+    expect(input.pointer.active).toBe(false);
+    expect(input.touch.touches.every((t, i) => t === pool[i])).toBe(true);
+    expect(input.touch.touches).toHaveLength(10);
+  });
+
+  it('touch most recent beats stale mouse', () => {
+    const target = new EventTarget();
+    const el = rectEl(new EventTarget());
+    const input = new Input({ target, element: el as unknown as Element });
+    el.dispatchEvent(Object.assign(new Event('mousemove'), { clientX: 100, clientY: 50 }));
+    touch(target, 'touchstart', 1, 300, 150);
+    input.update();
+    expect([input.pointer.source, input.pointer.nx]).toEqual(['touch', 1]);
+  });
+});
+
+describe('VirtualStick absolute mode', () => {
+  it('measures from fixed anchor instead of touch start', () => {
+    const target = new EventTarget();
+    const tc = new TouchControls(target);
+    const st = tc.addStick(new VirtualStick('s', 0, 0, 200, 200, 50, 0)).setAbsolute(true, 100, 100);
+    target.dispatchEvent(Object.assign(new Event('touchstart'), { changedTouches: [{ identifier: 1, clientX: 150, clientY: 100 }] }));
+    expect([st.x, st.y]).toEqual([1, 0]);
+    target.dispatchEvent(Object.assign(new Event('touchmove'), { changedTouches: [{ identifier: 1, clientX: 100, clientY: 75 }] }));
+    expect([st.x, st.y]).toEqual([0, -0.5]);
+  });
+  it('relative mode unchanged and default anchor is centre', () => {
+    const st = new VirtualStick('s', 0, 0, 200, 100);
+    expect([st.anchorX, st.anchorY, st.absolute]).toEqual([100, 50, false]);
+    st.begin(1, 10, 10); st.move(10, 10 + 30);
+    expect(st.y).toBe(0.5);
   });
 });

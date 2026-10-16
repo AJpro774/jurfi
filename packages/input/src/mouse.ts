@@ -1,3 +1,4 @@
+import { PointerState } from './pointer';
 import type { InputOptions } from './types';
 
 /** Mouse state with per-frame accumulated deltas and pointer lock. */
@@ -14,6 +15,8 @@ export class Mouse {
   frameDy = 0;
   frameWheel = 0;
   locked = false;
+  /** Absolute position (element-relative px + normalized 0..1). `active` once the mouse has moved over the element. */
+  readonly pointer = new PointerState();
   private readonly doc: InputOptions['document'];
   private readonly element: InputOptions['element'];
   readonly detach: () => void;
@@ -40,6 +43,9 @@ export class Mouse {
   private readonly onUp = (e: MouseEvent): void => { this.buttons &= ~(1 << e.button); };
   private readonly onMove = (e: MouseEvent): void => {
     this.x = e.clientX; this.y = e.clientY;
+    const ptr = this.pointer;
+    ptr.setClient(this.element, e.clientX, e.clientY);
+    ptr.active = true; ptr.source = 'mouse';
     this.dx += e.movementX || 0;
     this.dy += e.movementY || 0;
   };

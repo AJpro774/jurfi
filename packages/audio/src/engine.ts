@@ -1,6 +1,6 @@
 import { SpatialEmitter } from './emitter';
 import { MusicPlayer } from './music';
-import type { AudioEngineOptions, BusName, ListenerTransform, PlayOptions, SpatialOptions } from './types';
+import type { AudioEngineOptions, BusName, ListenerTransform, PlayOptions, SpatialOptions, ToneOptions } from './types';
 import { BUS_NAMES } from './types';
 import { Voice } from './voice';
 
@@ -189,6 +189,47 @@ export class AudioEngine {
     v.gain = gain;
     src.onended = () => { if (v.source === src) v.release(); };
     src.start(t);
+    return v;
+  }
+
+  /**
+   * Play a synthesized tone (OscillatorNode through a gain envelope) on a bus. Shares the voice pool:
+   * returns null if every voice is busy with higher-priority sounds.
+   */
+  playTone(opts: ToneOptions = {}): Voice | null {
+    const priority = opts.priority ?? 0;
+    const v = this.acquire(priority);
+    if (!v) return null;
+    const ctx = this.context;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    const freq = opts.frequency ?? 440;
+    const dur = Math.max(0, opts.duration ?? 0.2);
+    const vol = opts.volume ?? 1;
+    const fade = Math.min(Math.max(0, opts.fadeOut ?? 0.02), dur);
+    const t = ctx.currentTime;
+    osc.type = opts.type ?? 'sine';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(vol, t);
+    if (fade > 0) {
+      gain.gain.setValueAtTime(vol, t + dur - fade);
+      gain.gain.linearRampToValueAtTime(0, t + dur);
+    }
+    osc.connect(gain);
+    const bus = opts.bus ?? 'sfx';
+    gain.connect(this.buses[bus]);
+    v.active = true;
+    v.id = ++this.serial;
+    v.priority = priority;
+    v.startedAt = t;
+    v.assetId = '';
+    v.bus = bus;
+    v.baseFrequency = freq;
+    v.source = osc;
+    v.gain = gain;
+    osc.onended = () => { if (v.source === osc) v.release(); };
+    osc.start(t);
+    osc.stop(t + dur);
     return v;
   }
 

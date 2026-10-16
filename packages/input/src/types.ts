@@ -60,4 +60,9 @@ export interface InputOptions {
   buttonThreshold?: number;
   actionMap?: ActionMapJSON;
   context?: string;
+  /**
+   * Opt-in: call preventDefault() on keydown for these KeyboardEvent.code values (e.g. ['Space','ArrowUp']
+   * to stop page scrolling). `true` = every key bound in the action map (tracks rebinding). Default off.
+   */
+  preventDefaultKeys?: string[] | boolean;
 }
