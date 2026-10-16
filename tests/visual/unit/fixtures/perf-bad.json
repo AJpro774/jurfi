@@ -163,7 +163,9 @@
   }
  ],
  "budgets": {
-  "cpuMs": 8,
-  "gpuMs": 8
+  "cpuFrameMs": 8,
+  "gpuFrameMs": 8,
+  "gcSpikeMs": 4,
+  "heapGrowthMBPerSec": 1
  }
 }
