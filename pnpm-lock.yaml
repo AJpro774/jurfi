@@ -142,6 +142,9 @@ importers:
       '@jurfi/wasm':
         specifier: workspace:*
         version: link:../../packages/wasm
+      three:
+        specifier: ^0.186.1
+        version: 0.186.1
     devDependencies:
       '@jurfi/eslint-config':
         specifier: workspace:*
@@ -149,6 +152,9 @@ importers:
       '@jurfi/tsconfig':
         specifier: workspace:*
         version: link:../../tooling/tsconfig
+      '@types/three':
+        specifier: ^0.186.0
+        version: 0.186.0
       eslint:
         specifier: ^9.39.0
         version: 9.39.5
