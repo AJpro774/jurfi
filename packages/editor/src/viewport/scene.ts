@@ -62,7 +62,7 @@ import {
 } from './gizmo-math';
 import type { AxisId, GizmoHandle, GizmoSpace, PlaneId } from './gizmo-math';
 import { createGizmo } from './gizmos';
-import { buildGridSegments } from './grid-math';
+import { gridBounds } from './grid-math';
 import { createGridVisual } from './grid-view';
 import type { IdBufferPicker } from './picking';
 import { pickWithFallback } from './picking';
@@ -161,10 +161,9 @@ export function mountScene(options: SceneOptions): SceneHandle {
     z: palette.axisZ,
     highlight: palette.highlight,
   });
-  const grid3d = createGridVisual(buildGridSegments(20, 1, 'xz'), palette.grid, palette.gridAxis);
-  const grid2d = createGridVisual(buildGridSegments(20, 1, 'xy'), palette.grid, palette.gridAxis);
-  grid3d.root.position.y = -0.001;
-  grid2d.root.position.z = -0.01;
+  const gridKind = detectBackend() === 'webgpu' ? 'node' : 'glsl';
+  const grid3d = createGridVisual('xz', palette.grid, palette.gridAxis, gridKind);
+  const grid2d = createGridVisual('xy', palette.grid, palette.gridAxis, gridKind);
   const ambient = new AmbientLight(palette.light, 0.65);
   const key = new DirectionalLight(palette.light, 1.6);
   key.position.set(4, 8, 6);
@@ -303,6 +302,10 @@ export function mountScene(options: SceneOptions): SceneHandle {
   }
 
   function updateGrid(): void {
+    const aspect = Math.max(stage.clientWidth, 1) / Math.max(stage.clientHeight, 1);
+    grid3d.layout(orbit.target, gridBounds(perspective.far, orbit.distance, '3d'));
+    const span = Math.max(orthoState.halfHeight, orthoState.halfHeight * aspect);
+    grid2d.layout(orthoState.center, gridBounds(ortho.far, span, '2d'));
     grid3d.root.visible = settings.grid && settings.view === '3d';
     grid2d.root.visible = settings.grid && settings.view === '2d';
   }
@@ -406,6 +409,7 @@ export function mountScene(options: SceneOptions): SceneHandle {
     raf = requestAnimationFrame(frame);
     resize();
     syncCameras();
+    updateGrid();
     updateGizmo();
     try {
       renderer.render(world, activeCamera());
