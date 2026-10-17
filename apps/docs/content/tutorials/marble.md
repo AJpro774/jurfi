@@ -4,7 +4,7 @@ Source: `apps/samples/marble`. Run `pnpm --filter @jurfi/samples dev` and open `
 
 ## 1. Canvas and renderer
 
-`index.html` is the Pong page: one `<canvas id="game" width="640" height="400">`, CSS-scaled (8:5) to fill the window, colors from `@jurfi/ui` tokens. `main.ts` calls `createRenderer(canvas, backend)` from `@jurfi/render` (`detectBackend()` picks `'webgpu'` or `'webgl2'`) and builds a `three` scene (`Scene`, `PerspectiveCamera`, `Mesh`). `@jurfi/render` does not re-export three, so the sample depends on `three` directly. `createRenderer` is synchronous and does not call `WebGPURenderer.init()`; under `?test=1` the sample forces `'webgl2'`.
+`index.html` is the Pong page: one `<canvas id="game" width="640" height="400">`, CSS-scaled (8:5) to fill the window, colors from `@jurfi/ui` tokens. `main.ts` `await`s `createRenderer(canvas, backend)` from `@jurfi/render`. `detectBackend()` picks `'webgpu'` or `'webgl2'`. `createRenderer` builds a three.js `WebGPURenderer` (`'webgl2'` sets `forceWebGL`) and waits for `renderer.init()` before returning, so the first `renderer.render()` is safe on both backends. The scene, camera, floor, and marble come from `@jurfi/render` helpers (`createScene`, `createPerspectiveCamera`, `createMesh`), which use `MeshStandardNodeMaterial`. Lights and the gem octahedra still use `three` directly; `@jurfi/render` does not re-export three. Under `?test=1` the sample forces `'webgl2'` so headless runs do not need a WebGPU adapter. Init is still awaited.
 
 ## 2. Game logic (`game.ts`)
 

@@ -1,6 +1,6 @@
 import '@jurfi/ui';
-import { AmbientLight, Color, DirectionalLight, Mesh, MeshStandardMaterial, PerspectiveCamera, PlaneGeometry, Scene, SphereGeometry, OctahedronGeometry } from 'three';
-import { createRenderer, detectBackend } from '@jurfi/render';
+import { AmbientLight, Color, DirectionalLight, Mesh, OctahedronGeometry } from 'three';
+import { createMesh, createPerspectiveCamera, createRenderer, createScene, createStandardMaterial, detectBackend } from '@jurfi/render';
 import { Input } from '@jurfi/input';
 import { AudioEngine } from '@jurfi/audio';
 import { Profiler } from '@jurfi/perf';
@@ -14,10 +14,10 @@ const testMode = params.get('test') === '1';
 const canvas = document.querySelector<HTMLCanvasElement>('#game')!;
 const W = 640, H = 400;
 
-// @jurfi/render createRenderer(canvas, backend) is synchronous. Under ?test=1 force WebGL2 so headless runs need no WebGPU init
-// (WebGPURenderer needs `await renderer.init()`, which createRenderer does not do).
+// createRenderer awaits WebGPURenderer.init() on both backends. ?test=1 forces WebGL2
+// (forceWebGL) so headless runs do not need a WebGPU adapter; init is still awaited.
 const backend = testMode ? 'webgl2' : detectBackend();
-const renderer = createRenderer(canvas, backend);
+const renderer = await createRenderer(canvas, backend);
 renderer.setSize(W, H, false); // internal 640x400; CSS scales the canvas to fill the window (same as Pong)
 console.info('backend:', backend, testMode ? '(test mode)' : '');
 
@@ -65,20 +65,18 @@ const hud = document.createElement('div');
 hud.style.cssText = `position:fixed;left:0;right:0;top:8px;text-align:center;font:16px system-ui,sans-serif;color:${fg};pointer-events:none`;
 document.body.append(hud);
 
-const scene = new Scene();
-scene.background = new Color(bg);
+const scene = createScene({ background: bg });
 scene.add(new AmbientLight('white', 1.2));
 const sun = new DirectionalLight('white', 2.5);
 sun.position.set(4, 8, 3);
 scene.add(sun);
-const camera = new PerspectiveCamera(50, W / H, 0.1, 100);
-camera.position.set(0, 11, 8);
-camera.lookAt(0, 0, 0);
-const floor = new Mesh(new PlaneGeometry(HALF * 2, HALF * 2).rotateX(-Math.PI / 2), new MeshStandardMaterial({ color: new Color(accent).multiplyScalar(0.35) }));
+const camera = createPerspectiveCamera({ fov: 50, aspect: W / H, near: 0.1, far: 100, position: [0, 11, 8], lookAt: [0, 0, 0] });
+const floor = createMesh({ kind: 'plane', width: HALF * 2, height: HALF * 2, color: new Color(accent).multiplyScalar(0.35) });
+floor.rotation.x = -Math.PI / 2;
 scene.add(floor);
-const ball = new Mesh(new SphereGeometry(RADIUS, 24, 16), new MeshStandardMaterial({ color: new Color(fg), roughness: 0.3 }));
+const ball = createMesh({ kind: 'sphere', radius: RADIUS, widthSegments: 24, heightSegments: 16, color: fg, roughness: 0.3 });
 scene.add(ball);
-const gemMat = new MeshStandardMaterial({ color: new Color(accent), emissive: new Color(accent), emissiveIntensity: 0.4 });
+const gemMat = createStandardMaterial({ color: accent, emissive: accent, emissiveIntensity: 0.4 });
 const gemMeshes = game.gems.map((g) => { const m = new Mesh(new OctahedronGeometry(0.3), gemMat); m.position.set(g.x, 0.4, g.z); scene.add(m); return m; });
 
 function update(): void {
