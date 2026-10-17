@@ -9,7 +9,8 @@
   ],
   "files": [
     "dist",
-    "src/shell.css"
+    "src/shell.css",
+    "src/timeline/timeline.css"
   ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -18,7 +19,8 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
-    "./shell.css": "./src/shell.css"
+    "./shell.css": "./src/shell.css",
+    "./timeline.css": "./src/timeline/timeline.css"
   },
   "scripts": {
     "build": "tsup",
@@ -27,6 +29,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@jurfi/anim": "workspace:*",
     "@jurfi/core": "workspace:*",
     "@jurfi/render": "workspace:*",
     "@jurfi/ui": "workspace:*"
