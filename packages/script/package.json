@@ -1,7 +1,7 @@
 {
   "name": "@jurfi/script",
   "version": "0.0.0",
-  "description": "Jurfi script",
+  "description": "Visual scripting compiler and runtime",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
