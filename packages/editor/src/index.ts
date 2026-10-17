@@ -58,3 +58,8 @@ export { createEditor } from './shell';
 export type { CreateEditorOptions, Editor } from './shell';
 
 export { ensurePlaceholderPanels } from './panels';
+
+export { registerViewportPanel, VIEWPORT_PANEL_ID } from './viewport/register';
+export { setViewportIdBuffer } from './viewport/panel';
+export type { IdBufferPicker } from './viewport/picking';
+export type { ShadingMode, ViewMode } from './viewport/types';

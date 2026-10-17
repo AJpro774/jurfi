@@ -264,6 +264,9 @@ importers:
       '@jurfi/ui':
         specifier: workspace:*
         version: link:../ui
+      three:
+        specifier: ^0.186.1
+        version: 0.186.1
     devDependencies:
       '@jurfi/eslint-config':
         specifier: workspace:*
@@ -274,6 +277,9 @@ importers:
       '@jurfi/vitest-config':
         specifier: workspace:*
         version: link:../../tooling/vitest-config
+      '@types/three':
+        specifier: ^0.186.0
+        version: 0.186.0
       eslint:
         specifier: ^9.39.0
         version: 9.39.5
