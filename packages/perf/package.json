@@ -1,0 +1,35 @@
+{
+  "name": "@jurfi/perf",
+  "version": "0.0.0",
+  "description": "Performance profiler: ring buffer, budgets",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "tsup": "^9.0.0",
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.5",
+    "eslint": "^9.39.0",
+    "@jurfi/tsconfig": "workspace:*",
+    "@jurfi/vitest-config": "workspace:*",
+    "@jurfi/eslint-config": "workspace:*"
+  }
+}
