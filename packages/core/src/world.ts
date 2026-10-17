@@ -318,6 +318,16 @@ export class World {
     this.touch();
   }
 
+  /** JSON copy of every variable on `entity`. Dead entities return an empty object. */
+  getVariables(entity: Entity): Record<string, unknown> {
+    if (!this.pool.isAlive(entity)) return {};
+    const bucket = this.vars[entityIndex(entity)];
+    if (!bucket) return {};
+    const out: Record<string, unknown> = {};
+    for (const [name, value] of bucket) out[name] = cloneJson(value);
+    return out;
+  }
+
   hasVariable(entity: Entity, name: string): boolean {
     if (!this.pool.isAlive(entity)) return false;
     return this.vars[entityIndex(entity)]?.has(name) ?? false;
