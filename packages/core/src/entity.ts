@@ -79,6 +79,50 @@ export class EntityPool {
     return true;
   }
 
+  /**
+   * Mark `entity` alive at its packed generation.
+   * Rolls a destroyed slot's generation back so undo can revive the old id.
+   * The index is removed from the free list wherever it currently sits.
+   */
+  adopt(entity: Entity): void {
+    if (!isEntityId(entity) || entityGeneration(entity) === 0) {
+      throw new EcsError('invalid-entity', `Cannot adopt entity ${String(entity)}`);
+    }
+    const index = entityIndex(entity);
+    if (index > MAX_ENTITY_INDEX) {
+      throw new EcsError('capacity', `Entity index exceeds ${MAX_ENTITY_INDEX}`);
+    }
+    this.ensure(index + 1);
+    if (index >= this.nextIndex) {
+      for (let cursor = this.nextIndex; cursor < index; cursor += 1) {
+        if ((this.generations[cursor] ?? 0) === 0) this.generations[cursor] = 1;
+        this.aliveFlags[cursor] = 0;
+        this.free.push(cursor);
+      }
+      this.nextIndex = index + 1;
+    }
+    if (this.aliveFlags[index] === 1) {
+      throw new EcsError('invalid-entity', `Entity slot ${index} is already alive`);
+    }
+    const freeAt = this.free.lastIndexOf(index);
+    if (freeAt >= 0) this.free.splice(freeAt, 1);
+    this.generations[index] = entityGeneration(entity);
+    this.aliveFlags[index] = 1;
+  }
+
+  /**
+   * Mark `entity` dead and push its slot without advancing the generation.
+   * Undoes {@link EntityPool.create} so the same id can be adopted again.
+   */
+  release(entity: Entity): void {
+    if (!this.isAlive(entity)) {
+      throw new EcsError('dead-entity', `Entity ${String(entity)} is not alive`);
+    }
+    const index = entityIndex(entity);
+    this.aliveFlags[index] = 0;
+    this.free.push(index);
+  }
+
   isAlive(entity: Entity): boolean {
     if (!isEntityId(entity) || entityGeneration(entity) === 0) return false;
     const index = entityIndex(entity);
