@@ -110,7 +110,7 @@ interface UndoCommand {
 }
 ```
 
-Consecutive `push` calls that share a `mergeKey` become one history step. The default merge keeps the earlier `undo` (the original baseline) and the later `redo` (the newest value), which is the right behavior when `undo` / `redo` assign absolute state. Pass `merge(previous)` and return `false` to keep the commands separate, or return `true` after folding `previous` in yourself.
+Consecutive `push` calls that share a `mergeKey` become one history step. Undo or redo breaks the run, so the next push starts a new step even when the key matches. The default merge keeps the earlier `undo` (the original baseline) and the later `redo` (the newest value), which is the right behavior when `undo` / `redo` assign absolute state. Pass `merge(previous)` and return `false` to keep the commands separate, or return `true` after folding `previous` in yourself.
 
 `undo()` and `redo()` return `false` at the ends of the stack. A new `push` clears the redo stack. `subscribe` receives `'push' | 'undo' | 'redo' | 'clear'` after the world change for undo and redo. The stack caps at 200 entries.
 

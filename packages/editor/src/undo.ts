@@ -4,7 +4,8 @@
  * `push` does not call `redo`. The caller applies the change, then records the
  * command. `undo` / `redo` call the matching method.
  *
- * Consecutive commands that share a `mergeKey` collapse into one history step.
+ * An uninterrupted run of commands that share a `mergeKey` collapses into one
+ * history step. `undo` or `redo` breaks the run.
  * The default merge keeps the earlier `undo` (original baseline) and the later
  * `redo` (latest value). Provide `merge` to take over; return false to refuse.
  */
@@ -44,6 +45,8 @@ export function createUndoStack(): UndoStack {
   const undoStack: UndoCommand[] = [];
   const redoStack: UndoCommand[] = [];
   const listeners = new Set<(event: UndoEvent) => void>();
+  /** Merge only across an uninterrupted run of pushes. Undo or redo breaks the run. */
+  let coalesce = false;
 
   const emit = (event: UndoEvent): void => {
     for (const listener of [...listeners]) listener(event);
@@ -53,17 +56,19 @@ export function createUndoStack(): UndoStack {
     push(command) {
       redoStack.length = 0;
       const top = undoStack.at(-1);
-      if (top && command.mergeKey !== undefined && command.mergeKey === top.mergeKey) {
+      if (coalesce && top && command.mergeKey !== undefined && command.mergeKey === top.mergeKey) {
         const accepted = command.merge ? command.merge(top) : true;
         if (accepted) {
           if (!command.merge) stitch(command, top);
           undoStack[undoStack.length - 1] = command;
+          coalesce = true;
           emit('push');
           return;
         }
       }
       undoStack.push(command);
       if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
+      coalesce = true;
       emit('push');
     },
     undo() {
@@ -71,6 +76,7 @@ export function createUndoStack(): UndoStack {
       if (!command) return false;
       command.undo();
       redoStack.push(command);
+      coalesce = false;
       emit('undo');
       return true;
     },
@@ -79,6 +85,7 @@ export function createUndoStack(): UndoStack {
       if (!command) return false;
       command.redo();
       undoStack.push(command);
+      coalesce = false;
       emit('redo');
       return true;
     },
@@ -89,6 +96,7 @@ export function createUndoStack(): UndoStack {
     clear() {
       undoStack.length = 0;
       redoStack.length = 0;
+      coalesce = false;
       emit('clear');
     },
     subscribe(listener) {

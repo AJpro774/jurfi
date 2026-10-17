@@ -1,3 +1,4 @@
+import type { LayoutState } from './layout';
 import type { WorldSnapshot } from './world';
 
 export type PlayState = 'editing' | 'playing' | 'paused';
@@ -10,8 +11,8 @@ export interface EditorEventMap {
   'play:changed': { state: PlayState };
   'play:step': { state: PlayState };
   'gizmo:changed': { mode: GizmoMode };
-  'layout:changed': { layout: unknown };
-  'layout:reset': { layout: unknown };
+  'layout:changed': { layout: LayoutState };
+  'layout:reset': { layout: LayoutState };
   'project:saved': { name: string };
   'project:loaded': { name: string };
   'status': { message: string; level: 'info' | 'warn' | 'error' };

@@ -24,3 +24,36 @@ export type { CommandRegistry, EditorCommand } from './commands';
 
 export { createWorld, createDefaultSnapshot, isWorldSnapshot } from './world';
 export type { EditorWorld, EntityRecord, WorldSnapshot } from './world';
+
+export {
+  LAYOUT_STORAGE_KEY,
+  LAYOUT_VERSION,
+  PANEL,
+  STANDARD_PANELS,
+  ZONES,
+  cloneLayout,
+  defaultLayout,
+  focusPanel,
+  movePanel,
+  parseLayout,
+  serializeLayout,
+  setActiveTab,
+  setSizes,
+  setZoneCollapsed,
+  tryParseLayout,
+} from './layout';
+export type { LayoutSizes, LayoutState, ZoneId, ZoneState } from './layout';
+
+export {
+  AUTOSAVE_STORAGE_KEY,
+  PROJECT_FORMAT,
+  PROJECT_VERSION,
+  applyWorldSnapshot,
+  downloadText,
+  readProject,
+  writeProject,
+} from './project';
+export type { ProjectFile } from './project';
+
+export { browserStore, memoryStore } from './storage';
+export type { KeyValueStore } from './storage';
