@@ -30,8 +30,8 @@ Touch: when `input.pointer.source === 'touch'` the marble is pushed toward the f
 
 ## 4. Audio, loop and profiling
 
-`AudioEngine.playTone({ frequency, duration, type, volume, bus: 'sfx' })` plays the gem and bump blips; `new AudioEngine({ muted: true })` under `?test=1`. A `Profiler` from `@jurfi/perf` times `update` and `draw`. The loop is the same 1/60 s accumulator as Pong; `clock.ts` is a copy of Pong's fixed clock and mulberry32 RNG.
+`AudioEngine.playTone({ frequency, duration, type, volume, bus: 'sfx' })` plays the gem and bump blips; `new AudioEngine({ muted: true })` under `?test=1`. A `Profiler` from `@jurfi/perf` times `update` and `draw`. The loop uses the same shared `@jurfi/perf` helpers as Pong: `createClock({ fixedStepMs: 1000 / 60, maxCatchUp: 15 })` (`tick(realMs)` then `while (clock.step())`), `createTestClock()` under `?test=1` (`advance(n)`), and `createRng(seed)` (PCG32; `rng.next()` places the gems).
 
 ## 5. Test mode
 
-Open `/marble/?test=1`: WebGL2 backend, one step per frame, seed 1337, audio muted. `window.__marble.advance(n)` runs `n` steps (calling `input.update()` each) and redraws; `__marble.start()` begins play; `__marble.game` exposes the state. Call `start()` and `advance()` in one `page.evaluate` to avoid interleaving with the page's own animation frames.
+Open `/marble/?test=1`: WebGL2 backend, one step per frame, `createRng(1337)`, audio muted. `window.__marble.advance(n)` runs `n` steps (calling `input.update()` each) and redraws; `__marble.start()` begins play; `__marble.game` exposes the state. Call `start()` and `advance()` in one `page.evaluate` to avoid interleaving with the page's own animation frames.
