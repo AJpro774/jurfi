@@ -409,6 +409,9 @@ importers:
       '@jurfi/vitest-config':
         specifier: workspace:*
         version: link:../../tooling/vitest-config
+      esbuild:
+        specifier: ^0.28.2
+        version: 0.28.2
       eslint:
         specifier: ^9.39.0
         version: 9.39.5

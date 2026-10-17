@@ -27,6 +27,12 @@ export {
 export type { NodeDef, PinSpec, VariadicExecOut } from './registry';
 export { NodeRegistry, createNodeRegistry } from './registry';
 
+export type { DefinedScript, DefineScriptOptions, ScriptNodeContext } from './scripts';
+export { defineScript } from './scripts';
+
+export type { PaletteGap } from './palette';
+export { paletteGaps, paletteNodes } from './palette';
+
 export {
   builtinNodeDefs,
   createBuiltinRegistry,
@@ -48,8 +54,13 @@ export type {
 } from './ir';
 export { compile, emitJavaScript } from './compile';
 
+export type { NodeFault } from './fault';
+
 export type { EntityRef, MemoryWorld, ScriptWorld } from './world';
 export { coreGaps, createMemoryWorld } from './world';
+
+export type { HostBindings, ScriptHost, ScriptHostOptions } from './host';
+export { createScriptHost } from './host';
 
 export type {
   DebugEvent,
@@ -61,4 +72,4 @@ export type {
   ScriptRuntime,
   ScriptRuntimeOptions,
 } from './runtime';
-export { ScriptRuntimeError, createScriptRuntime } from './runtime';
+export { ScriptRuntimeError, createScriptRuntime, interpreterBuild } from './runtime';

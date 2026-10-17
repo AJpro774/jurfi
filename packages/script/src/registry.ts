@@ -38,6 +38,11 @@ export interface NodeDef {
   /** Data-only node. It has no exec pins and is pulled by consumers. */
   pure?: boolean;
   variadicExecOut?: VariadicExecOut;
+  /**
+   * Leave this node out of the script palette.
+   * Hidden is how an unfinished node stays registered without a handler.
+   */
+  hidden?: boolean;
 }
 
 /**
