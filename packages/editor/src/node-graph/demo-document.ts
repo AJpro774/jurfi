@@ -14,17 +14,17 @@ export function createDemoGraph() {
     undo: createUndoStack(),
   });
 
-  const start = must(controller.addNode('event.onStart', { x: 48, y: 72 }));
-  const sequence = must(controller.addNode('flow.sequence', { x: 320, y: 64 }));
-  const hello = must(controller.addNode('data.string', { x: 320, y: 250 }));
+  const start = must(controller.addNode('core/OnStart', { x: 48, y: 72 }));
+  const sequence = must(controller.addNode('core/Sequence', { x: 320, y: 64 }));
+  const hello = must(controller.addNode('core/String', { x: 320, y: 250 }));
   controller.setProp(hello, 'value', 'Hello, Jurfi');
-  const printHello = must(controller.addNode('action.print', { x: 600, y: 48 }));
-  const flag = must(controller.addNode('data.bool', { x: 600, y: 250 }));
+  const printHello = must(controller.addNode('core/Print', { x: 600, y: 48 }));
+  const flag = must(controller.addNode('core/Bool', { x: 600, y: 250 }));
   controller.setProp(flag, 'value', true);
-  const branch = must(controller.addNode('flow.branch', { x: 880, y: 48 }));
-  const taken = must(controller.addNode('data.string', { x: 880, y: 280 }));
+  const branch = must(controller.addNode('core/Branch', { x: 880, y: 48 }));
+  const taken = must(controller.addNode('core/String', { x: 880, y: 280 }));
   controller.setProp(taken, 'value', 'Branch taken');
-  const printTaken = must(controller.addNode('action.print', { x: 1160, y: 36 }));
+  const printTaken = must(controller.addNode('core/Print', { x: 1160, y: 36 }));
 
   link(controller, { node: start, pin: 'exec' }, { node: sequence, pin: 'exec' });
   link(controller, { node: sequence, pin: 'then0' }, { node: printHello, pin: 'exec' });

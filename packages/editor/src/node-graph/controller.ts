@@ -2,7 +2,7 @@ import type { GraphDocument, GraphEndpoint, GraphRect, Vec2 } from '@jurfi/scrip
 import type { UndoStack } from '../undo';
 import { extractClipboard, pasteClipboard } from './clipboard';
 import type { GraphClipboard } from './clipboard';
-import type { NodeTypeRegistry } from './registry';
+import type { NodeRegistry } from './registry';
 import { evaluateConnection } from './validate';
 
 export interface IdFactory {
@@ -48,7 +48,7 @@ export interface GraphEndpointPair {
 
 export function createGraphController(options: {
   document: GraphDocument;
-  registry: NodeTypeRegistry;
+  registry: NodeRegistry;
   undo: UndoStack;
   ids?: IdFactory;
   readOnly?: boolean;
@@ -154,8 +154,9 @@ export function createGraphController(options: {
       const result = evaluateConnection(doc, a, b);
       if (!result.ok) return result.message;
       const edge = result.edge;
+      const edgeId = ids('edge');
       const ok = commit('Connect', (draft) => {
-        draft.edges.push(edge);
+        draft.edges.push({ ...edge, id: edgeId });
       });
       return ok ? null : 'Read only';
     },

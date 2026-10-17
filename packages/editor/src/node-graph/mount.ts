@@ -3,50 +3,69 @@ import type { EditorContext } from '../context';
 import { PANEL } from '../layout';
 import { registerPanel } from '../registry';
 import { createUndoStack, type UndoStack } from '../undo';
+import { identityGraphAdapter, type GraphDocAdapter } from './adapter';
 import { createGraphController, type GraphController } from './controller';
-import type { NodeGraphDebugSource } from './debug';
+import { edgeWireId, type DebugEvent, type DebugSource } from './debug';
 import { createDemoGraph } from './demo-document';
-import type { NodeTypeRegistry } from './registry';
+import type { NodeRegistry } from './registry';
 import { createDefaultRegistry } from './registry';
+import { deserializeGraph, serializeGraph } from './serialize';
 import { NodeGraphView } from './view';
 
-export interface NodeGraphOptions {
-  registry?: NodeTypeRegistry;
+/** Last committed graph. Separate from the shell project file, which stores the world. */
+export const GRAPH_AUTOSAVE_KEY = 'jurfi.editor.nodegraph';
+
+export interface NodeGraphOptions<TDoc = GraphDocument> {
+  /** Node types for this domain. Defaults to the script `core/*` catalog. */
+  registry?: NodeRegistry;
+  /**
+   * Host-document boundary. Omit it when `doc` is already a `GraphDocument`.
+   * `fromGraph` must return JSON-serializable data.
+   */
+  adapter?: GraphDocAdapter<TDoc>;
   /** Editor undo stack. A private stack is created when this is omitted. */
   undo?: UndoStack;
   readOnly?: boolean;
-  onChange?: (document: GraphDocument) => void;
+  onChange?: (document: TDoc) => void;
 }
 
-export interface NodeGraphHandle {
+export interface NodeGraphHandle<TDoc = GraphDocument> {
   destroy(): void;
-  getDocument(): GraphDocument;
-  setDocument(document: GraphDocument): void;
-  onChange(listener: (document: GraphDocument) => void): () => void;
+  getDocument(): TDoc;
+  setDocument(document: TDoc): void;
+  onChange(listener: (document: TDoc) => void): () => void;
   select(ids: readonly string[]): void;
   getSelection(): string[];
   /** Frame the given node ids, the current selection, or the whole graph. */
   frame(ids?: readonly string[]): void;
-  setDebugSource(source: NodeGraphDebugSource | null): void;
+  setDebugSource(source: DebugSource | null): void;
   undo(): void;
   redo(): void;
 }
 
-export function mountNodeGraph(el: HTMLElement, doc: GraphDocument, opts: NodeGraphOptions = {}): NodeGraphHandle {
+export function mountNodeGraph<TDoc = GraphDocument>(
+  el: HTMLElement,
+  doc: TDoc,
+  opts: NodeGraphOptions<TDoc> = {},
+): NodeGraphHandle<TDoc> {
   const registry = opts.registry ?? createDefaultRegistry();
   const undo = opts.undo ?? createUndoStack();
+  const adapter = opts.adapter ?? (identityGraphAdapter() as GraphDocAdapter<TDoc>);
   const controller = createGraphController({
-    document: doc,
+    document: adapter.toGraph(doc),
     registry,
     undo,
     readOnly: opts.readOnly,
   });
-  const view = new NodeGraphView(el, controller, registry, opts.onChange);
+  const emit = (graph: GraphDocument): void => {
+    opts.onChange?.(adapter.fromGraph(graph));
+  };
+  const view = new NodeGraphView(el, controller, registry, emit);
   return {
     destroy: () => view.destroy(),
-    getDocument: () => view.getDocument(),
-    setDocument: (document) => view.setDocument(document),
-    onChange: (listener) => view.onChange(listener),
+    getDocument: () => adapter.fromGraph(view.getDocument()),
+    setDocument: (document) => view.setDocument(adapter.toGraph(document)),
+    onChange: (listener) => view.onChange((graph) => listener(adapter.fromGraph(graph))),
     select: (ids) => view.select(ids),
     getSelection: () => view.getSelection(),
     frame: (ids) => view.frame(ids),
@@ -59,10 +78,30 @@ export function mountNodeGraph(el: HTMLElement, doc: GraphDocument, opts: NodeGr
 interface GraphSession {
   undo: UndoStack;
   controller: GraphController;
-  registry: NodeTypeRegistry;
+  registry: NodeRegistry;
 }
 
 let session: GraphSession | null = null;
+
+function readGraphAutosave(): GraphDocument | null {
+  try {
+    if (typeof localStorage === 'undefined') return null;
+    const raw = localStorage.getItem(GRAPH_AUTOSAVE_KEY);
+    if (!raw) return null;
+    return deserializeGraph(raw);
+  } catch {
+    return null;
+  }
+}
+
+function writeGraphAutosave(doc: GraphDocument): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem(GRAPH_AUTOSAVE_KEY, serializeGraph(doc));
+  } catch {
+    // Storage can be full or disabled. The in-memory document stays current.
+  }
+}
 
 /**
  * Replace the shell's Node Graph placeholder.
@@ -76,7 +115,7 @@ export function registerNodeGraphPanel(): () => void {
     title: 'Node Graph',
     mount(el, ctx) {
       const controller = controllerFor(ctx, registry);
-      const view = new NodeGraphView(el, controller, registry);
+      const view = new NodeGraphView(el, controller, registry, writeGraphAutosave);
       const debug = attachPlayDebug(ctx, view);
       return () => {
         debug();
@@ -86,9 +125,9 @@ export function registerNodeGraphPanel(): () => void {
   });
 }
 
-function controllerFor(ctx: EditorContext, registry: NodeTypeRegistry): GraphController {
+function controllerFor(ctx: EditorContext, registry: NodeRegistry): GraphController {
   if (session && session.undo === ctx.undo) return session.controller;
-  const document = session?.controller.getDocument() ?? createDemoGraph();
+  const document = session?.controller.getDocument() ?? readGraphAutosave() ?? createDemoGraph();
   const controller = createGraphController({ document, registry, undo: ctx.undo });
   session = { undo: ctx.undo, controller, registry };
   return controller;
@@ -97,33 +136,53 @@ function controllerFor(ctx: EditorContext, registry: NodeTypeRegistry): GraphCon
 function attachPlayDebug(ctx: EditorContext, view: NodeGraphView): () => void {
   let timer = 0;
   let step = 0;
+  let activeNode = '';
+  const listeners = new Set<(event: DebugEvent) => void>();
+  const source: DebugSource = {
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+  };
+
+  const emit = (event: DebugEvent): void => {
+    for (const listener of listeners) listener(event);
+  };
 
   const publish = (): void => {
     const doc = session?.controller.getDocument();
     if (!doc) return;
     const ids = doc.nodes.map((node) => node.id);
-    const current = ids.length === 0 ? '' : ids[step % ids.length] ?? '';
+    const current = ids.length === 0 ? '' : (ids[step % ids.length] ?? '');
     step += 1;
-    const values: Record<string, unknown> = {};
+    if (activeNode) emit({ kind: 'node', nodeId: activeNode, phase: 'exit' });
+    activeNode = current;
+    if (current) emit({ kind: 'node', nodeId: current, phase: 'enter' });
     for (const edge of doc.edges) {
-      const source = doc.nodes.find((node) => node.id === edge.from.node);
-      const pin = source?.pins.find((item) => item.id === edge.from.pin);
+      const node = doc.nodes.find((item) => item.id === edge.from.node);
+      const pin = node?.pins.find((item) => item.id === edge.from.pin);
       if (pin?.kind !== 'data') continue;
-      values[`${edge.from.node}:${edge.from.pin}`] = source?.props.value ?? source?.props.name ?? pin.dataType;
+      emit({
+        kind: 'wire',
+        wireId: edgeWireId(edge),
+        value: node?.props.value ?? node?.props.name ?? pin.dataType,
+      });
     }
-    const source: NodeGraphDebugSource = { executingNodeIds: current ? [current] : [], values };
-    view.setDebugSource(source);
   };
 
   const stop = (): void => {
     window.clearInterval(timer);
     timer = 0;
+    activeNode = '';
     view.setDebugSource(null);
   };
 
   const sync = (): void => {
     if (ctx.getPlayState() === 'playing') {
       if (timer !== 0) return;
+      view.setDebugSource(source);
       publish();
       timer = window.setInterval(publish, 700);
       return;
@@ -134,6 +193,7 @@ function attachPlayDebug(ctx: EditorContext, view: NodeGraphView): () => void {
   const offPlay = ctx.bus.on('play:changed', sync);
   const offStep = ctx.bus.on('play:step', () => {
     if (ctx.getPlayState() === 'playing') return;
+    view.setDebugSource(source);
     publish();
   });
   sync();

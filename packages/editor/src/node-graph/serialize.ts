@@ -1,6 +1,5 @@
-import { DATA_TYPES, GRAPH_VERSION } from '@jurfi/script';
+import { GRAPH_VERSION } from '@jurfi/script';
 import type {
-  DataType,
   GraphComment,
   GraphDocument,
   GraphEdge,
@@ -12,7 +11,7 @@ import type {
 } from '@jurfi/script';
 import { normalizeConnections } from './validate';
 
-const DATA_TYPE_SET = new Set<string>(DATA_TYPES);
+const MAX_SUBGRAPH_DEPTH = 8;
 
 export class GraphSchemaError extends Error {
   readonly issues: readonly string[];
@@ -50,16 +49,16 @@ export function parseGraph(
     }
   }
   const issues: string[] = [];
-  const document = readDocument(value, issues);
+  const document = readDocument(value, issues, 0);
   if (!document || issues.length > 0) return { ok: false, issues };
-  const normalized = normalizeConnections(document);
+  const normalized = normalizeTree(document);
   if (normalized.issues.length > 0) return { ok: false, issues: normalized.issues };
   return { ok: true, document: canonicalDocument(normalized.document) };
 }
 
-/** Drop editor-only `pos`, `groups`, and `comments` for a game export. */
+/** Drop editor-only `pos`, `groups`, and `comments`, including inside subgraphs. */
 export function stripEditorData(doc: GraphDocument): RuntimeGraphDocument {
-  return {
+  const runtime: RuntimeGraphDocument = {
     version: doc.version,
     nodes: doc.nodes.map((node) => ({
       id: node.id,
@@ -67,21 +66,36 @@ export function stripEditorData(doc: GraphDocument): RuntimeGraphDocument {
       pins: node.pins.map(canonicalPin),
       props: node.props,
     })),
-    edges: doc.edges.map((edge) => ({
-      from: { node: edge.from.node, pin: edge.from.pin },
-      to: { node: edge.to.node, pin: edge.to.pin },
-    })),
+    edges: doc.edges.map(canonicalEdge),
   };
+  if (doc.subgraphs) runtime.subgraphs = stripSubgraphs(doc.subgraphs);
+  return runtime;
+}
+
+function stripSubgraphs(subgraphs: Record<string, GraphDocument>): Record<string, RuntimeGraphDocument> {
+  const next: Record<string, RuntimeGraphDocument> = {};
+  for (const [id, child] of Object.entries(subgraphs)) next[id] = stripEditorData(child);
+  return next;
+}
+
+function normalizeTree(doc: GraphDocument): { document: GraphDocument; issues: string[] } {
+  const self = normalizeConnections(doc);
+  if (!doc.subgraphs) return self;
+  const issues = [...self.issues];
+  const subgraphs: Record<string, GraphDocument> = {};
+  for (const [id, child] of Object.entries(doc.subgraphs)) {
+    const nested = normalizeTree(child);
+    for (const issue of nested.issues) issues.push(`${id}: ${issue}`);
+    subgraphs[id] = nested.document;
+  }
+  return { document: { ...self.document, subgraphs }, issues };
 }
 
 function canonicalDocument(doc: GraphDocument): GraphDocument {
-  return {
+  const next: GraphDocument = {
     version: doc.version,
     nodes: doc.nodes.map(canonicalNode),
-    edges: doc.edges.map((edge) => ({
-      from: { node: edge.from.node, pin: edge.from.pin },
-      to: { node: edge.to.node, pin: edge.to.pin },
-    })),
+    edges: doc.edges.map(canonicalEdge),
     groups: doc.groups.map((group) => ({
       id: group.id,
       title: group.title,
@@ -94,16 +108,34 @@ function canonicalDocument(doc: GraphDocument): GraphDocument {
       rect: { ...comment.rect },
     })),
   };
+  if (doc.subgraphs) next.subgraphs = canonicalSubgraphs(doc.subgraphs);
+  return next;
+}
+
+function canonicalSubgraphs(subgraphs: Record<string, GraphDocument>): Record<string, GraphDocument> {
+  const next: Record<string, GraphDocument> = {};
+  for (const [id, child] of Object.entries(subgraphs)) next[id] = canonicalDocument(child);
+  return next;
+}
+
+function canonicalEdge(edge: GraphEdge): GraphEdge {
+  const next: GraphEdge = {
+    from: { node: edge.from.node, pin: edge.from.pin },
+    to: { node: edge.to.node, pin: edge.to.pin },
+  };
+  if (edge.id) next.id = edge.id;
+  return next;
 }
 
 function canonicalNode(node: GraphNode): GraphNode {
-  return {
+  const next: GraphNode = {
     id: node.id,
     type: node.type,
     pins: node.pins.map(canonicalPin),
     props: node.props,
-    pos: { x: node.pos.x, y: node.pos.y },
   };
+  if (node.pos) next.pos = { x: node.pos.x, y: node.pos.y };
+  return next;
 }
 
 function canonicalPin(pin: GraphPin): GraphPin {
@@ -112,7 +144,8 @@ function canonicalPin(pin: GraphPin): GraphPin {
   return next;
 }
 
-function readDocument(value: unknown, issues: string[]): GraphDocument | null {
+function readDocument(value: unknown, issues: string[], depth: number): GraphDocument | null {
+  const start = issues.length;
   if (!isRecord(value)) {
     issues.push('Graph must be an object');
     return null;
@@ -120,9 +153,12 @@ function readDocument(value: unknown, issues: string[]): GraphDocument | null {
   if (value.version !== GRAPH_VERSION) issues.push(`version must be ${GRAPH_VERSION}`);
   const nodes = readNodes(value.nodes, issues);
   const edges = readEdges(value.edges, issues);
-  const groups = readGroups(value.groups, issues);
-  const comments = readComments(value.comments, issues);
-  if (!nodes || !edges || !groups || !comments || issues.length > 0) return null;
+  const groups = value.groups === undefined ? [] : readGroups(value.groups, issues);
+  const comments = value.comments === undefined ? [] : readComments(value.comments, issues);
+  const subgraphs = value.subgraphs === undefined ? undefined : readSubgraphs(value.subgraphs, issues, depth);
+  if (!nodes || !edges || !groups || !comments || (value.subgraphs !== undefined && !subgraphs) || issues.length > start) {
+    return null;
+  }
 
   const ids = new Set<string>();
   for (const node of nodes) claimId(ids, node.id, `node ${node.id}`, issues);
@@ -139,8 +175,38 @@ function readDocument(value: unknown, issues: string[]): GraphDocument | null {
     if (!endpointExists(nodes, edge.from)) issues.push('edge references a missing pin');
     if (!endpointExists(nodes, edge.to)) issues.push('edge references a missing pin');
   }
-  if (issues.length > 0) return null;
-  return { version: GRAPH_VERSION, nodes, edges, groups, comments };
+  if (issues.length > start) return null;
+  const document: GraphDocument = { version: GRAPH_VERSION, nodes, edges, groups, comments };
+  if (subgraphs) document.subgraphs = subgraphs;
+  return document;
+}
+
+function readSubgraphs(
+  value: unknown,
+  issues: string[],
+  depth: number,
+): Record<string, GraphDocument> | null {
+  if (depth >= MAX_SUBGRAPH_DEPTH) {
+    issues.push('subgraphs nested too deeply');
+    return null;
+  }
+  if (!isRecord(value)) {
+    issues.push('subgraphs must be an object');
+    return null;
+  }
+  const subgraphs: Record<string, GraphDocument> = {};
+  for (const [id, child] of Object.entries(value)) {
+    if (id.length === 0) {
+      issues.push('subgraph id must be a non-empty string');
+      continue;
+    }
+    const before = issues.length;
+    const document = readDocument(child, issues, depth + 1);
+    if (!document || issues.length > before) continue;
+    subgraphs[id] = document;
+  }
+  const failed = Object.keys(subgraphs).length !== Object.keys(value).length;
+  return failed ? null : subgraphs;
 }
 
 function readNodes(value: unknown, issues: string[]): GraphNode[] | null {
@@ -165,14 +231,16 @@ function readNode(value: unknown, path: string, issues: string[]): GraphNode | n
   const type = readId(value.type, `${path}.type`, issues);
   const pins = readPins(value.pins, `${path}.pins`, issues);
   const props = readProps(value.props, `${path}.props`, issues);
-  const pos = readVec(value.pos, `${path}.pos`, issues);
-  if (!id || !type || !pins || !props || !pos) return null;
+  const pos = value.pos === undefined ? undefined : readVec(value.pos, `${path}.pos`, issues);
+  if (!id || !type || !pins || !props || (value.pos !== undefined && !pos)) return null;
   const pinIds = new Set<string>();
   for (const pin of pins) {
     if (pinIds.has(pin.id)) issues.push(`${path} has duplicate pin ${pin.id}`);
     pinIds.add(pin.id);
   }
-  return { id, type, pins, props, pos };
+  const node: GraphNode = { id, type, pins, props };
+  if (pos) node.pos = pos;
+  return node;
 }
 
 function readPins(value: unknown, path: string, issues: string[]): GraphPin[] | null {
@@ -200,11 +268,11 @@ function readPin(value: unknown, path: string, issues: string[]): GraphPin | nul
   const direction = value.direction === 'in' || value.direction === 'out' ? value.direction : null;
   if (!kind) issues.push(`${path}.kind must be exec or data`);
   if (!direction) issues.push(`${path}.direction must be in or out`);
-  let dataType: DataType | undefined;
+  let dataType: string | undefined;
   if (kind === 'data') {
-    if (typeof value.dataType !== 'string' || !DATA_TYPE_SET.has(value.dataType)) {
+    if (typeof value.dataType !== 'string' || value.dataType.length === 0) {
       issues.push(`${path}.dataType is invalid`);
-    } else dataType = value.dataType as DataType;
+    } else dataType = value.dataType;
   }
   if (!id || name === null || !kind || !direction || (kind === 'data' && !dataType)) return null;
   const pin: GraphPin = { id, name, kind, direction };
@@ -233,7 +301,13 @@ function readEdge(value: unknown, path: string, issues: string[]): GraphEdge | n
   const from = readEndpoint(value.from, `${path}.from`, issues);
   const to = readEndpoint(value.to, `${path}.to`, issues);
   if (!from || !to) return null;
-  return { from, to };
+  const edge: GraphEdge = { from, to };
+  if (value.id !== undefined) {
+    const id = readId(value.id, `${path}.id`, issues);
+    if (!id) return null;
+    edge.id = id;
+  }
+  return edge;
 }
 
 function readEndpoint(value: unknown, path: string, issues: string[]): GraphEdge['from'] | null {

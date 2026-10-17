@@ -1,7 +1,4 @@
-import { DATA_TYPES } from '@jurfi/script';
 import type { GraphDocument, GraphEdge, GraphEndpoint, GraphNode, GraphPin } from '@jurfi/script';
-
-const DATA_TYPE_SET = new Set<string>(DATA_TYPES);
 
 export interface LocatedPin {
   node: GraphNode;
@@ -51,11 +48,9 @@ export function evaluateConnection(doc: GraphDocument, a: GraphEndpoint, b: Grap
     return { ok: false, message: `Cannot connect ${source.pin.kind} to ${target.pin.kind}` };
   }
   if (source.pin.kind === 'data') {
-    const fromType = source.pin.dataType ?? 'any';
-    const toType = target.pin.dataType ?? 'any';
-    if (!DATA_TYPE_SET.has(fromType) || !DATA_TYPE_SET.has(toType)) {
-      return { ok: false, message: 'Unknown data type' };
-    }
+    const fromType = source.pin.dataType;
+    const toType = target.pin.dataType;
+    if (!fromType || !toType) return { ok: false, message: 'Unknown data type' };
     if (fromType !== 'any' && toType !== 'any' && fromType !== toType) {
       return { ok: false, message: `Type mismatch: ${fromType} → ${toType}` };
     }
@@ -122,7 +117,7 @@ export function normalizeConnections(doc: GraphDocument): { document: GraphDocum
   for (const edge of doc.edges) {
     const result = evaluateConnection(partial, edge.from, edge.to);
     if (!result.ok) issues.push(result.message);
-    else edges.push(result.edge);
+    else edges.push(edge.id ? { ...result.edge, id: edge.id } : result.edge);
   }
   return { document: { ...doc, edges }, issues };
 }

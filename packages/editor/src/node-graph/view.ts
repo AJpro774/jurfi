@@ -2,10 +2,11 @@ import { clamp } from '@jurfi/core';
 import type { GraphDocument, GraphEndpoint, GraphNode, GraphRect, PinDirection, Vec2 } from '@jurfi/script';
 import type { GraphClipboard } from './clipboard';
 import type { GraphController } from './controller';
-import { formatDebugValue, lookupWireValue } from './debug';
-import type { NodeGraphDebugSource } from './debug';
-import { LAYOUT, nodeRect, normalizeRect, padRect, pinAnchor, unionRects, wireGeometry } from './geometry';
-import type { NodeTypeDefinition, NodeTypeRegistry } from './registry';
+import { applyDebugEvent, createDebugOverlay, edgeWireId, formatDebugValue } from './debug';
+import type { DebugOverlay, DebugSource } from './debug';
+import { LAYOUT, nodePos, nodeRect, normalizeRect, padRect, pinAnchor, unionRects, wireGeometry } from './geometry';
+import { nodeTitle, searchNodes } from './registry';
+import type { NodeDefinition, NodeRegistry } from './registry';
 import { emptySelection, idsTouchingRect, mergeIds, toggleMember } from './selection';
 import type { GraphSelection } from './selection';
 import { evaluateConnection } from './validate';
@@ -57,7 +58,7 @@ export class NodeGraphView {
   private readonly redoButton: HTMLButtonElement;
   private readonly ghost: HTMLElement;
   private readonly controller: GraphController;
-  private readonly registry: NodeTypeRegistry;
+  private readonly registry: NodeRegistry;
   private readonly notify?: (document: GraphDocument) => void;
   private doc: GraphDocument;
   private selection: GraphSelection = emptySelection();
@@ -72,7 +73,7 @@ export class NodeGraphView {
   private didFrame = false;
   private pasteSerial = 0;
   private clipboard: GraphClipboard | null = null;
-  private debug: NodeGraphDebugSource | null = null;
+  private readonly debug: DebugOverlay = createDebugOverlay();
   private debugUnsub: (() => void) | null = null;
   private readonly stopDoc: () => void;
   private readonly stopBus: () => void;
@@ -82,7 +83,7 @@ export class NodeGraphView {
   constructor(
     host: HTMLElement,
     controller: GraphController,
-    registry: NodeTypeRegistry,
+    registry: NodeRegistry,
     onChange?: (document: GraphDocument) => void,
   ) {
     this.controller = controller;
@@ -253,11 +254,17 @@ export class NodeGraphView {
     this.syncMinimap();
   }
 
-  setDebugSource(source: NodeGraphDebugSource | null): void {
+  setDebugSource(source: DebugSource | null): void {
     this.debugUnsub?.();
     this.debugUnsub = null;
-    this.debug = source;
-    if (source?.subscribe) this.debugUnsub = source.subscribe(() => this.syncFrame());
+    this.debug.executing.clear();
+    this.debug.values.clear();
+    if (source) {
+      this.debugUnsub = source.subscribe((event) => {
+        applyDebugEvent(this.debug, event);
+        this.syncFrame();
+      });
+    }
     this.syncFrame();
   }
 
@@ -278,8 +285,8 @@ export class NodeGraphView {
 
   private renderPalette(): void {
     const doc = this.root.ownerDocument;
-    const matches = this.registry.search(this.searchInput.value);
-    const groups = new Map<string, NodeTypeDefinition[]>();
+    const matches = searchNodes(this.registry, this.searchInput.value);
+    const groups = new Map<string, NodeDefinition[]>();
     for (const definition of matches) {
       const list = groups.get(definition.category) ?? [];
       list.push(definition);
@@ -296,9 +303,12 @@ export class NodeGraphView {
       for (const definition of definitions) {
         const item = button(doc, '');
         item.className = 'ng-palette-item';
-        item.dataset.nodeType = definition.type;
+        item.dataset.nodeType = definition.typeId;
         item.title = definition.doc;
-        item.append(h(doc, 'span', 'ng-palette-title', definition.title), h(doc, 'span', 'ng-palette-doc', definition.doc));
+        item.append(
+          h(doc, 'span', 'ng-palette-title', nodeTitle(definition, definition.typeId)),
+          h(doc, 'span', 'ng-palette-doc', definition.doc),
+        );
         block.append(item);
       }
       this.paletteList.append(block);
@@ -348,17 +358,18 @@ export class NodeGraphView {
 
   private renderNode(doc: Document, node: GraphNode): HTMLElement {
     const definition = this.registry.get(node.type);
+    const title = nodeTitle(definition, node.type);
     const el = h(doc, 'article', 'ng-node');
     el.dataset.id = node.id;
     el.dataset.category = definition?.category ?? '';
     el.style.setProperty('--ng-cat', CATEGORY_COLOR[definition?.category ?? ''] ?? 'var(--border-strong)');
-    el.title = definition?.doc ?? node.type;
+    el.title = definition?.doc ?? title;
     if (this.selection.nodes.includes(node.id)) el.classList.add('is-selected');
     const positioned = this.positioned(node);
     const rect = nodeRect(positioned, definition?.fields?.length ?? 0);
     el.style.transform = `translate(${positioned.pos.x}px, ${positioned.pos.y}px)`;
     el.style.minHeight = `${rect.h}px`;
-    el.append(h(doc, 'header', 'ng-node-title', definition?.title ?? node.type));
+    el.append(h(doc, 'header', 'ng-node-title', title));
 
     const inputs = node.pins.filter((pin) => pin.direction === 'in');
     const outputs = node.pins.filter((pin) => pin.direction === 'out');
@@ -394,7 +405,7 @@ export class NodeGraphView {
         input.dataset.nodeId = node.id;
         input.dataset.fieldKey = field.key;
         input.dataset.fieldKind = field.kind;
-        input.setAttribute('aria-label', `${definition?.title ?? node.type} ${field.label}`);
+        input.setAttribute('aria-label', `${title} ${field.label}`);
         if (field.kind === 'boolean') {
           input.type = 'checkbox';
           input.checked = node.props[field.key] === true;
@@ -430,7 +441,7 @@ export class NodeGraphView {
       if (!node) continue;
       const pos = this.positioned(node).pos;
       el.style.transform = `translate(${pos.x}px, ${pos.y}px)`;
-      el.classList.toggle('is-executing', this.debug?.executingNodeIds?.includes(node.id) ?? false);
+      el.classList.toggle('is-executing', this.debug.executing.has(node.id));
     }
     for (const el of this.world.querySelectorAll<HTMLElement>('.ng-comment')) {
       const comment = this.doc.comments.find((item) => item.id === el.dataset.id);
@@ -482,7 +493,7 @@ export class NodeGraphView {
       path.dataset.type = source?.kind === 'exec' ? 'exec' : (source?.dataType ?? 'any');
       path.setAttribute('d', wire.path);
       svg.append(hit, path);
-      const value = formatDebugValue(lookupWireValue(this.debug?.values, edge));
+      const value = formatDebugValue(this.debug.values.get(edgeWireId(edge)));
       if (value) {
         const tag = h(doc, 'div', 'ng-wire-label', value);
         tag.style.left = `${wire.mid.x}px`;
@@ -921,7 +932,7 @@ export class NodeGraphView {
     const start = new Map<string, Vec2>();
     for (const nodeId of ids) {
       const node = this.doc.nodes.find((item) => item.id === nodeId);
-      if (node) start.set(nodeId, { ...node.pos });
+      if (node) start.set(nodeId, { ...nodePos(node) });
     }
     this.capture(event);
     this.drag = { kind: 'nodes', pointerId: event.pointerId, origin, start };
@@ -960,7 +971,7 @@ export class NodeGraphView {
     const nodes = new Map<string, Vec2>();
     for (const nodeId of group.nodeIds) {
       const node = this.doc.nodes.find((item) => item.id === nodeId);
-      if (node) nodes.set(nodeId, { ...node.pos });
+      if (node) nodes.set(nodeId, { ...nodePos(node) });
     }
     this.capture(event);
     this.drag = {
@@ -1159,9 +1170,10 @@ export class NodeGraphView {
     };
   }
 
-  private positioned(node: GraphNode): GraphNode {
-    const pos = this.previewPos?.get(node.id) ?? node.pos;
-    return pos === node.pos ? node : { ...node, pos };
+  private positioned(node: GraphNode): GraphNode & { pos: Vec2 } {
+    const pos = this.previewPos?.get(node.id) ?? nodePos(node);
+    if (node.pos === pos) return node as GraphNode & { pos: Vec2 };
+    return { ...node, pos };
   }
 
   private commentRect(id: string, rect: GraphRect): GraphRect {

@@ -1,4 +1,5 @@
 import type { GraphComment, GraphDocument, GraphEdge, GraphGroup, GraphNode, GraphRect, Vec2 } from '@jurfi/script';
+import { nodePos } from './geometry';
 
 export interface GraphClipboard {
   nodes: GraphNode[];
@@ -43,10 +44,11 @@ export function pasteClipboard(
     const id = idFor('node');
     nodeMap.set(node.id, id);
     created.nodes.push(id);
+    const pos = nodePos(node);
     draft.nodes.push({
       ...structuredClone(node),
       id,
-      pos: { x: node.pos.x + offset.x, y: node.pos.y + offset.y },
+      pos: { x: pos.x + offset.x, y: pos.y + offset.y },
     });
   }
   for (const edge of clipboard.edges) {
@@ -54,6 +56,7 @@ export function pasteClipboard(
     const toNode = nodeMap.get(edge.to.node);
     if (!fromNode || !toNode) continue;
     draft.edges.push({
+      id: idFor('edge'),
       from: { node: fromNode, pin: edge.from.pin },
       to: { node: toNode, pin: edge.to.pin },
     });

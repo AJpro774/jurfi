@@ -1,31 +1,47 @@
 import type { GraphEdge } from '@jurfi/script';
 
-/** Live values and execution highlights pushed in by a debugger. */
-export interface NodeGraphDebugSource {
-  /** Node ids currently executing. */
-  executingNodeIds?: readonly string[];
-  /**
-   * Live values keyed by `${fromNode}:${fromPin}->${toNode}:${toPin}`
-   * or `${nodeId}:${pinId}`.
-   */
-  values?: Readonly<Record<string, unknown>>;
-  subscribe?(listener: () => void): () => void;
+/** A live wire value. `wireId` is `edge.id`, or the endpoint key when the edge has no id. */
+export interface DebugWireEvent {
+  kind: 'wire';
+  wireId: string;
+  value: unknown;
 }
 
-export function lookupWireValue(
-  values: Readonly<Record<string, unknown>> | undefined,
-  edge: GraphEdge,
-): unknown {
-  if (!values) return undefined;
-  const keys = [
-    `${edge.from.node}:${edge.from.pin}->${edge.to.node}:${edge.to.pin}`,
-    `${edge.from.node}:${edge.from.pin}`,
-    `${edge.to.node}:${edge.to.pin}`,
-  ];
-  for (const key of keys) {
-    if (Object.prototype.hasOwnProperty.call(values, key)) return values[key];
+/** A node execution highlight. `enter` marks the node; `exit` clears it. */
+export interface DebugNodeEvent {
+  kind: 'node';
+  nodeId: string;
+  phase: 'enter' | 'exit';
+}
+
+export type DebugEvent = DebugWireEvent | DebugNodeEvent;
+
+/** Push debugger events. The canvas applies each event as it arrives. */
+export interface DebugSource {
+  subscribe(listener: (event: DebugEvent) => void): () => void;
+}
+
+export interface DebugOverlay {
+  executing: Set<string>;
+  values: Map<string, unknown>;
+}
+
+export function createDebugOverlay(): DebugOverlay {
+  return { executing: new Set(), values: new Map() };
+}
+
+export function applyDebugEvent(overlay: DebugOverlay, event: DebugEvent): void {
+  if (event.kind === 'node') {
+    if (event.phase === 'enter') overlay.executing.add(event.nodeId);
+    else overlay.executing.delete(event.nodeId);
+    return;
   }
-  return undefined;
+  overlay.values.set(event.wireId, event.value);
+}
+
+/** Id a `{ kind: 'wire' }` event uses for this edge. */
+export function edgeWireId(edge: GraphEdge): string {
+  return edge.id ?? `${edge.from.node}:${edge.from.pin}->${edge.to.node}:${edge.to.pin}`;
 }
 
 export function formatDebugValue(value: unknown): string {

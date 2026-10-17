@@ -2,4 +2,4 @@
 
 Runtime scripts plus the shared visual-script graph schema (`GraphDocument`).
 
-`src/graph.ts` is a **provisional stub** (`GRAPH_TYPES_STUB`). The Script Compiler has not published the schema yet; the node graph editor imports these types instead of defining a private copy. Replace the stub when the compiler owns it.
+`src/graph.ts` records the Script Compiler's document decision (`edges`, optional `pos`, `groups`, `comments`, type ids like `core/Add`, optional `subgraphs`). It is still a stub (`GRAPH_TYPES_STUB`) because the compiler has not published the module. The node graph editor imports these types instead of keeping a private copy.

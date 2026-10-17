@@ -1,27 +1,31 @@
 /**
- * @stub PROVISIONAL graph contract.
+ * @stub Graph contract recorded from the Script Compiler decision.
  *
- * The Script Compiler has not published these types yet (nothing on main
- * beyond `Script` / `runScripts`). This file is the schema the node graph
- * editor imports from `@jurfi/script` so the two sides share one definition.
- * Replace it when the compiler owns the schema. `GRAPH_TYPES_STUB` stays
- * `true` until that happens.
+ * The compiler has not published a module yet, so these types still live
+ * here and `GRAPH_TYPES_STUB` stays `true`. The editor imports them from
+ * `@jurfi/script` instead of keeping a private copy.
  *
- * Agreed document shape:
- * `{ version, nodes:[{ id, type, pins, props, pos:{x,y} }], edges:[{ from:{node,pin}, to:{node,pin} }], groups, comments }`
+ * Document shape:
+ * `{ version, nodes:[{ id, type, pins, props, pos?:{x,y} }], edges:[{ id?, from:{node,pin}, to:{node,pin} }], groups, comments, subgraphs? }`
  *
- * Pins carry a separate `exec` | `data` kind. `pos`, `groups`, and `comments`
- * are editor-only and must be stripped before a game export (see
- * `RuntimeGraphDocument`).
+ * `type` is a type id such as `core/Add`. Connections are `edges`, not wires.
+ * `pos`, `groups`, and `comments` are editor-only. `subgraphs` is an optional
+ * map of nested documents keyed by id. `stripEditorData` removes editor-only
+ * data, including inside nested subgraphs.
+ *
+ * Pin kinds are `exec` | `data`. `dataType` is an open string so another
+ * domain (a blend tree, for example) can name its own types. `any` matches
+ * every data type.
  */
 
 export const GRAPH_TYPES_STUB = true;
 
 export const GRAPH_VERSION = 1;
 
+/** Script builtins. Other domains may use their own data-type strings. `any` matches every type. */
 export const DATA_TYPES = ['bool', 'number', 'string', 'vec2', 'vec3', 'object', 'any'] as const;
 
-export type DataType = (typeof DATA_TYPES)[number];
+export type DataType = string;
 
 export type PinKind = 'exec' | 'data';
 
@@ -42,6 +46,11 @@ export interface GraphEndpoint {
 }
 
 export interface GraphEdge {
+  /**
+   * Stable id a debugger uses as `wireId`.
+   * When omitted, callers derive `${from.node}:${from.pin}->${to.node}:${to.pin}`.
+   */
+  id?: string;
   from: GraphEndpoint;
   to: GraphEndpoint;
 }
@@ -61,11 +70,12 @@ export interface GraphRect {
 
 export interface GraphNode {
   id: string;
+  /** Type id, for example `core/Add`. */
   type: string;
   pins: GraphPin[];
   props: Record<string, unknown>;
-  /** Editor-only. Strip on export. */
-  pos: Vec2;
+  /** Editor-only canvas position. Omitted on a runtime document. */
+  pos?: Vec2;
 }
 
 /** Editor-only. Strip on export. */
@@ -89,6 +99,8 @@ export interface GraphDocument {
   edges: GraphEdge[];
   groups: GraphGroup[];
   comments: GraphComment[];
+  /** Nested graphs keyed by id. Each value is a full document. */
+  subgraphs?: Record<string, GraphDocument>;
 }
 
 /** Compiler-facing node: layout removed. */
@@ -104,4 +116,5 @@ export interface RuntimeGraphDocument {
   version: number;
   nodes: RuntimeGraphNode[];
   edges: GraphEdge[];
+  subgraphs?: Record<string, RuntimeGraphDocument>;
 }

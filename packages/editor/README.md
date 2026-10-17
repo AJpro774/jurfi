@@ -167,7 +167,7 @@ Project files are JSON (`format: 'jurfi-project'`, version 1) containing the wor
 
 `registerNodeGraphPanel()` claims the `nodegraph` panel id. Call it before `createEditor` so the shell placeholder is never installed. The panel uses `EditorContext.undo`: each edit is applied, then pushed. `push` does not call `redo`. Tab switches remount the view against the same controller, so undo closures stay valid.
 
-`mountNodeGraph(element, document, options)` mounts the same canvas without the dock. Pass `options.undo` to share a stack. Otherwise it creates a private `UndoStack`. The handle exposes `onChange`, `select`, `frame`, `setDebugSource`, `undo`, and `redo`.
+`mountNodeGraph(element, document, options)` mounts the same canvas without the dock. Pass `options.undo` to share a stack. Otherwise it creates a private `UndoStack`. Pass `options.registry` (`register`, `get`, `list`) and `options.adapter` (`toGraph` / `fromGraph`) to reuse the canvas for another domain, such as a blend tree. The canvas edits a `GraphDocument` only. The handle exposes `onChange`, `select`, `frame`, `setDebugSource`, `undo`, and `redo`. `onChange` emits the host document from the adapter.
 
 ```ts
 import { createEditor, registerNodeGraphPanel } from '@jurfi/editor';
@@ -176,9 +176,11 @@ registerNodeGraphPanel();
 createEditor({ root });
 ```
 
-Graph document types (`GraphDocument`, pins, edges) come from `@jurfi/script`. `packages/script/src/graph.ts` is a provisional stub (`GRAPH_TYPES_STUB`) until the Script Compiler publishes the schema. `pos`, `groups`, and `comments` are editor-only. `stripEditorData(doc)` removes them for export.
+Graph document types come from `@jurfi/script`. `packages/script/src/graph.ts` records the Script Compiler decision and is still a stub (`GRAPH_TYPES_STUB`) until that package publishes the module. The document uses `edges` (not wires), optional node `pos`, top-level `groups` and `comments`, type ids such as `core/Add`, and an optional `subgraphs` map keyed by id. `stripEditorData(doc)` removes `pos`, `groups`, and `comments`, including inside subgraphs.
 
-While the editor is playing, the panel highlights nodes and shows data-pin values from node props. `setDebugSource` accepts a live source from a real runtime.
+`setDebugSource` subscribes to debug events: `{ kind: 'wire', wireId, value }` and `{ kind: 'node', nodeId, phase: 'enter' | 'exit' }`. `wireId` is the edge id when the edge has one, otherwise `fromNode:fromPin->toNode:toPin`.
+
+Every committed edit is on the undo stack, and `getDocument()` is JSON. The panel writes that JSON to `localStorage` under `jurfi.editor.nodegraph` after each commit so a reload can restore it. The shell project file and `jurfi.editor.autosave` still store the world and layout only. A drag or a text field is not in the document until the gesture or the field commits.
 
 ```bash
 pnpm --filter @jurfi/ui build

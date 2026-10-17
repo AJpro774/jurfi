@@ -16,12 +16,18 @@ export function nodeHeight(inputCount: number, outputCount: number, fieldCount: 
   return LAYOUT.header + rows * LAYOUT.row + fields;
 }
 
+/** Canvas position. Nodes may omit `pos` until the editor places them. */
+export function nodePos(node: GraphNode): Vec2 {
+  return node.pos ?? { x: 0, y: 0 };
+}
+
 export function nodeRect(node: GraphNode, fieldCount: number): GraphRect {
   const inputs = node.pins.filter((pin) => pin.direction === 'in').length;
   const outputs = node.pins.filter((pin) => pin.direction === 'out').length;
+  const pos = nodePos(node);
   return {
-    x: node.pos.x,
-    y: node.pos.y,
+    x: pos.x,
+    y: pos.y,
     w: LAYOUT.nodeWidth,
     h: nodeHeight(inputs, outputs, fieldCount),
   };
@@ -32,9 +38,10 @@ export function pinAnchor(node: GraphNode, pinId: string): Vec2 | null {
   if (!pin) return null;
   const row = node.pins.filter((item) => item.direction === pin.direction).findIndex((item) => item.id === pinId);
   if (row < 0) return null;
+  const pos = nodePos(node);
   return {
-    x: node.pos.x + (pin.direction === 'out' ? LAYOUT.nodeWidth : 0),
-    y: node.pos.y + LAYOUT.header + row * LAYOUT.row + LAYOUT.row / 2,
+    x: pos.x + (pin.direction === 'out' ? LAYOUT.nodeWidth : 0),
+    y: pos.y + LAYOUT.header + row * LAYOUT.row + LAYOUT.row / 2,
   };
 }
 

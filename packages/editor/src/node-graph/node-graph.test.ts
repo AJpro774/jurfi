@@ -5,10 +5,11 @@ import { createUndoStack } from '../undo';
 import type { UndoStack } from '../undo';
 import { createGraphController, createIdFactory } from './controller';
 import type { GraphController } from './controller';
-import { formatDebugValue, lookupWireValue } from './debug';
+import { applyDebugEvent, createDebugOverlay, edgeWireId, formatDebugValue } from './debug';
+import { identityGraphAdapter, type GraphDocAdapter } from './adapter';
 import { createDemoGraph } from './demo-document';
 import { pinAnchor, wireGeometry } from './geometry';
-import { createDefaultRegistry } from './registry';
+import { createDefaultRegistry, createRegistry, searchNodes } from './registry';
 import { idsTouchingRect, mergeIds, toggleMember } from './selection';
 import { createEmptyGraph, deserializeGraph, GraphSchemaError, serializeGraph, stripEditorData } from './serialize';
 import { evaluateConnection, validateGraph } from './validate';
@@ -31,9 +32,9 @@ function end(node: string, pin: string): GraphEndpoint {
 describe('connection validation', () => {
   it('connects exec to exec and allows output fan-out', () => {
     const { controller } = graph();
-    const start = controller.addNode('event.onStart', { x: 0, y: 0 }) ?? '';
-    const printA = controller.addNode('action.print', { x: 200, y: 0 }) ?? '';
-    const printB = controller.addNode('action.print', { x: 200, y: 120 }) ?? '';
+    const start = controller.addNode('core/OnStart', { x: 0, y: 0 }) ?? '';
+    const printA = controller.addNode('core/Print', { x: 200, y: 0 }) ?? '';
+    const printB = controller.addNode('core/Print', { x: 200, y: 120 }) ?? '';
     expect(controller.connect(end(start, 'exec'), end(printA, 'exec'))).toBeNull();
     expect(controller.connect(end(start, 'exec'), end(printB, 'exec'))).toBeNull();
     expect(controller.getDocument().edges).toHaveLength(2);
@@ -41,10 +42,10 @@ describe('connection validation', () => {
 
   it('orients a drag that starts on the input', () => {
     const { controller } = graph();
-    const start = controller.addNode('event.onStart', { x: 0, y: 0 }) ?? '';
-    const print = controller.addNode('action.print', { x: 200, y: 0 }) ?? '';
+    const start = controller.addNode('core/OnStart', { x: 0, y: 0 }) ?? '';
+    const print = controller.addNode('core/Print', { x: 200, y: 0 }) ?? '';
     expect(controller.connect(end(print, 'exec'), end(start, 'exec'))).toBeNull();
-    expect(controller.getDocument().edges[0]).toEqual({
+    expect(controller.getDocument().edges[0]).toMatchObject({
       from: { node: start, pin: 'exec' },
       to: { node: print, pin: 'exec' },
     });
@@ -52,34 +53,34 @@ describe('connection validation', () => {
 
   it('rejects data type mismatches, exec/data mixes, and input fan-in', () => {
     const { controller } = graph();
-    const number = controller.addNode('data.number', { x: 0, y: 0 }) ?? '';
-    const text = controller.addNode('data.string', { x: 0, y: 80 }) ?? '';
-    const print = controller.addNode('action.print', { x: 240, y: 0 }) ?? '';
-    const start = controller.addNode('event.onStart', { x: 0, y: 160 }) ?? '';
+    const number = controller.addNode('core/Number', { x: 0, y: 0 }) ?? '';
+    const text = controller.addNode('core/String', { x: 0, y: 80 }) ?? '';
+    const print = controller.addNode('core/Print', { x: 240, y: 0 }) ?? '';
+    const start = controller.addNode('core/OnStart', { x: 0, y: 160 }) ?? '';
     expect(controller.connect(end(number, 'value'), end(print, 'message'))).toBe('Type mismatch: number → string');
     expect(controller.connect(end(start, 'exec'), end(print, 'message'))).toBe('Cannot connect exec to data');
     expect(controller.connect(end(text, 'value'), end(print, 'message'))).toBeNull();
-    const other = controller.addNode('data.string', { x: 0, y: 240 }) ?? '';
+    const other = controller.addNode('core/String', { x: 0, y: 240 }) ?? '';
     expect(controller.connect(end(other, 'value'), end(print, 'message'))).toBe('Input already connected');
     expect(controller.getDocument().edges).toHaveLength(1);
   });
 
   it('treats any as compatible with concrete data types', () => {
     const { controller } = graph();
-    const variable = controller.addNode('data.getVariable', { x: 0, y: 0 }) ?? '';
-    const add = controller.addNode('math.add', { x: 240, y: 0 }) ?? '';
+    const variable = controller.addNode('core/GetVariable', { x: 0, y: 0 }) ?? '';
+    const add = controller.addNode('core/Add', { x: 240, y: 0 }) ?? '';
     expect(evaluateConnection(controller.getDocument(), end(variable, 'value'), end(add, 'a')).ok).toBe(true);
   });
 
   it('rejects exec cycles and allows data cycles', () => {
     const { controller } = graph();
-    const first = controller.addNode('action.print', { x: 0, y: 0 }) ?? '';
-    const second = controller.addNode('action.print', { x: 240, y: 0 }) ?? '';
+    const first = controller.addNode('core/Print', { x: 0, y: 0 }) ?? '';
+    const second = controller.addNode('core/Print', { x: 240, y: 0 }) ?? '';
     expect(controller.connect(end(first, 'then'), end(second, 'exec'))).toBeNull();
     expect(controller.connect(end(second, 'then'), end(first, 'exec'))).toBe('Exec cycle');
 
-    const addA = controller.addNode('math.add', { x: 0, y: 200 }) ?? '';
-    const addB = controller.addNode('math.add', { x: 240, y: 200 }) ?? '';
+    const addA = controller.addNode('core/Add', { x: 0, y: 200 }) ?? '';
+    const addB = controller.addNode('core/Add', { x: 240, y: 200 }) ?? '';
     expect(controller.connect(end(addA, 'result'), end(addB, 'a'))).toBeNull();
     expect(controller.connect(end(addB, 'result'), end(addA, 'a'))).toBeNull();
     expect(validateGraph(controller.getDocument())).toEqual([]);
@@ -87,7 +88,7 @@ describe('connection validation', () => {
 
   it('rejects a pin connected to itself and unknown pins', () => {
     const { controller } = graph();
-    const add = controller.addNode('math.add', { x: 0, y: 0 }) ?? '';
+    const add = controller.addNode('core/Add', { x: 0, y: 0 }) ?? '';
     expect(evaluateConnection(controller.getDocument(), end(add, 'a'), end(add, 'a')).ok).toBe(false);
     const missing = evaluateConnection(controller.getDocument(), end(add, 'nope'), end(add, 'a'));
     expect(missing.ok).toBe(false);
@@ -117,14 +118,14 @@ describe('serialization', () => {
     doc.nodes.push(
       {
         id: 'start',
-        type: 'event.onStart',
+        type: 'core/OnStart',
         pins: [{ id: 'exec', name: 'Out', kind: 'exec', direction: 'out' }],
         props: {},
         pos: { x: 0, y: 0 },
       },
       {
         id: 'print',
-        type: 'action.print',
+        type: 'core/Print',
         pins: [
           { id: 'exec', name: 'In', kind: 'exec', direction: 'in' },
           { id: 'message', name: 'Message', kind: 'data', direction: 'in', dataType: 'string' },
@@ -150,7 +151,7 @@ describe('serialization', () => {
     const parsed = deserializeGraph(JSON.stringify(createDemoGraph()));
     const duplicated = structuredClone(parsed);
     const edge = duplicated.edges.find((item) => item.to.pin === 'message');
-    const other = duplicated.nodes.find((node) => node.type === 'data.string' && node.id !== edge?.from.node);
+    const other = duplicated.nodes.find((node) => node.type === 'core/String' && node.id !== edge?.from.node);
     expect(edge && other).toBeTruthy();
     if (!edge || !other) return;
     duplicated.edges.push({ from: { node: other.id, pin: 'value' }, to: { ...edge.to } });
@@ -161,8 +162,8 @@ describe('serialization', () => {
 describe('commands', () => {
   it('undoes and redoes add, connect, move, prop edits, and delete', () => {
     const { controller, undo } = graph();
-    const start = controller.addNode('event.onStart', { x: 1, y: 2 }) ?? '';
-    const print = controller.addNode('action.print', { x: 20, y: 30 }) ?? '';
+    const start = controller.addNode('core/OnStart', { x: 1, y: 2 }) ?? '';
+    const print = controller.addNode('core/Print', { x: 20, y: 30 }) ?? '';
     controller.connect(end(start, 'exec'), end(print, 'exec'));
     controller.moveNodes({ [print]: { x: 80, y: 90 } });
     controller.setProp(print, 'note', 'hi');
@@ -211,8 +212,8 @@ describe('commands', () => {
       registry: createDefaultRegistry(),
       undo,
     });
-    const number = controller.addNode('data.number', { x: 0, y: 0 }) ?? '';
-    const print = controller.addNode('action.print', { x: 10, y: 10 }) ?? '';
+    const number = controller.addNode('core/Number', { x: 0, y: 0 }) ?? '';
+    const print = controller.addNode('core/Print', { x: 10, y: 10 }) ?? '';
     expect(controller.connect(end(number, 'value'), end(print, 'message'))).toMatch(/Type mismatch/);
     controller.moveNodes({ [number]: { x: 0, y: 0 } });
     expect(labels).toEqual(['Add node', 'Add node']);
@@ -231,7 +232,7 @@ describe('commands', () => {
       nodesAtPush = controller.getDocument().nodes.length;
       push(command);
     };
-    controller.addNode('data.number', { x: 0, y: 0 });
+    controller.addNode('core/Number', { x: 0, y: 0 });
     expect(nodesAtPush).toBe(1);
     expect(undo.undo()).toBe(true);
     expect(controller.getDocument().nodes).toHaveLength(0);
@@ -241,8 +242,8 @@ describe('commands', () => {
 
   it('undoes comments, groups, and paste', () => {
     const { controller, undo } = graph();
-    const first = controller.addNode('math.add', { x: 0, y: 0 }) ?? '';
-    const second = controller.addNode('math.add', { x: 40, y: 0 }) ?? '';
+    const first = controller.addNode('core/Add', { x: 0, y: 0 }) ?? '';
+    const second = controller.addNode('core/Add', { x: 40, y: 0 }) ?? '';
     controller.connect(end(first, 'result'), end(second, 'a'));
     const comment = controller.addComment({ x: 0, y: 0, w: 100, h: 40 }, 'Note') ?? '';
     controller.setCommentText(comment, 'Edited');
@@ -271,7 +272,7 @@ describe('commands', () => {
 
   it('keeps a returned document from mutating the live graph', () => {
     const { controller } = graph();
-    controller.addNode('data.bool', { x: 0, y: 0 });
+    controller.addNode('core/Bool', { x: 0, y: 0 });
     const copy = controller.getDocument();
     copy.nodes.length = 0;
     expect(controller.getDocument().nodes).toHaveLength(1);
@@ -285,23 +286,24 @@ describe('commands', () => {
       undo,
       readOnly: true,
     });
-    expect(controller.addNode('data.number', { x: 0, y: 0 })).toBeNull();
+    expect(controller.addNode('core/Number', { x: 0, y: 0 })).toBeNull();
     expect(undo.canUndo()).toBe(false);
   });
 });
 
 describe('registry, geometry, and debug values', () => {
-  it('searches by title, category, and doc', () => {
+  it('searches by title, type id, category, and doc', () => {
     const registry = createDefaultRegistry();
-    expect(registry.search('print').map((item) => item.type)).toEqual(['action.print']);
-    expect(registry.search('FLOW').some((item) => item.type === 'flow.branch')).toBe(true);
-    expect(registry.search('does-not-exist')).toEqual([]);
-    expect(registry.get('math.add')?.pins.map((pin) => pin.id)).toEqual(['a', 'b', 'result']);
+    expect(searchNodes(registry, 'print').map((item) => item.typeId)).toEqual(['core/Print']);
+    expect(searchNodes(registry, 'FLOW').some((item) => item.typeId === 'core/Branch')).toBe(true);
+    expect(searchNodes(registry, 'core/Add').map((item) => item.typeId)).toEqual(['core/Add']);
+    expect(searchNodes(registry, 'does-not-exist')).toEqual([]);
+    expect(registry.get('core/Add')?.pins.map((pin) => pin.id)).toEqual(['a', 'b', 'result']);
   });
 
   it('places output pins on the right edge and builds a wire', () => {
     const { controller } = graph();
-    const id = controller.addNode('event.onStart', { x: 10, y: 20 }) ?? '';
+    const id = controller.addNode('core/OnStart', { x: 10, y: 20 }) ?? '';
     const node = controller.getDocument().nodes[0];
     expect(node).toBeTruthy();
     if (!node) return;
@@ -328,11 +330,149 @@ describe('registry, geometry, and debug values', () => {
     expect(hits).toEqual(['inside']);
   });
 
-  it('reads live wire values from edge or pin keys', () => {
-    const edge = { from: { node: 'a', pin: 'value' }, to: { node: 'b', pin: 'message' } };
-    expect(lookupWireValue({ 'a:value->b:message': 'Hello' }, edge)).toBe('Hello');
-    expect(lookupWireValue({ 'a:value': 3 }, edge)).toBe(3);
+  it('applies debug wire and node events', () => {
+    const edge = { id: 'wire-1', from: { node: 'a', pin: 'value' }, to: { node: 'b', pin: 'message' } };
+    const bare = { from: { node: 'a', pin: 'value' }, to: { node: 'b', pin: 'message' } };
+    expect(edgeWireId(edge)).toBe('wire-1');
+    expect(edgeWireId(bare)).toBe('a:value->b:message');
+    const overlay = createDebugOverlay();
+    applyDebugEvent(overlay, { kind: 'node', nodeId: 'a', phase: 'enter' });
+    applyDebugEvent(overlay, { kind: 'wire', wireId: 'wire-1', value: 'Hello' });
+    expect(overlay.executing.has('a')).toBe(true);
+    expect(overlay.values.get('wire-1')).toBe('Hello');
+    applyDebugEvent(overlay, { kind: 'node', nodeId: 'a', phase: 'exit' });
+    expect(overlay.executing.has('a')).toBe(false);
     expect(formatDebugValue('Hello, Jurfi')).toBe('Hello, Jurfi');
     expect(formatDebugValue({ ok: true })).toBe('{"ok":true}');
+  });
+});
+
+describe('domain adapter, subgraphs, and snapshots', () => {
+  it('round-trips a host document through an adapter and a foreign registry', () => {
+    interface BlendDoc {
+      clips: { id: string; clip: string; x?: number; y?: number }[];
+      links: { from: string; to: string }[];
+    }
+    const adapter: GraphDocAdapter<BlendDoc> = {
+      toGraph(doc) {
+        return {
+          version: GRAPH_VERSION,
+          nodes: doc.clips.map((clip) => ({
+            id: clip.id,
+            type: 'anim/Clip',
+            pins: [
+              { id: 'in', name: 'In', kind: 'data', direction: 'in', dataType: 'pose' },
+              { id: 'out', name: 'Out', kind: 'data', direction: 'out', dataType: 'pose' },
+            ],
+            props: { clip: clip.clip },
+            ...(clip.x !== undefined && clip.y !== undefined ? { pos: { x: clip.x, y: clip.y } } : {}),
+          })),
+          edges: doc.links.map((link) => ({
+            from: { node: link.from, pin: 'out' },
+            to: { node: link.to, pin: 'in' },
+          })),
+          groups: [],
+          comments: [],
+        };
+      },
+      fromGraph(graph) {
+        return {
+          clips: graph.nodes.map((node) => ({
+            id: node.id,
+            clip: String(node.props.clip ?? ''),
+            ...(node.pos ? { x: node.pos.x, y: node.pos.y } : {}),
+          })),
+          links: graph.edges.map((edge) => ({ from: edge.from.node, to: edge.to.node })),
+        };
+      },
+    };
+    const registry = createRegistry([
+      {
+        typeId: 'anim/Clip',
+        category: 'Blend',
+        doc: 'Samples a clip.',
+        pins: [
+          { id: 'in', name: 'In', kind: 'data', direction: 'in', dataType: 'pose' },
+          { id: 'out', name: 'Out', kind: 'data', direction: 'out', dataType: 'pose' },
+        ],
+        fields: [{ key: 'clip', label: 'Clip', kind: 'string' }],
+        defaults: { clip: '' },
+      },
+    ]);
+    const host: BlendDoc = {
+      clips: [
+        { id: 'idle', clip: 'Idle' },
+        { id: 'run', clip: 'Run', x: 40, y: 10 },
+      ],
+      links: [],
+    };
+    const undo = createUndoStack();
+    const controller = createGraphController({
+      document: adapter.toGraph(host),
+      registry,
+      undo,
+    });
+    expect(controller.connect(end('idle', 'out'), end('run', 'in'))).toBeNull();
+    const saved = adapter.fromGraph(controller.getDocument());
+    expect(saved.links).toEqual([{ from: 'idle', to: 'run' }]);
+    expect(saved.clips.find((clip) => clip.id === 'idle')?.x).toBeUndefined();
+    expect(JSON.parse(JSON.stringify(saved))).toEqual(saved);
+    expect(undo.undo()).toBe(true);
+    expect(adapter.fromGraph(controller.getDocument()).links).toEqual([]);
+    expect(identityGraphAdapter().fromGraph(createEmptyGraph()).nodes).toEqual([]);
+  });
+
+  it('keeps optional positions and strips editor data inside subgraphs', () => {
+    const doc = createEmptyGraph();
+    doc.nodes.push({
+      id: 'add',
+      type: 'core/Add',
+      pins: [
+        { id: 'a', name: 'A', kind: 'data', direction: 'in', dataType: 'number' },
+        { id: 'b', name: 'B', kind: 'data', direction: 'in', dataType: 'number' },
+        { id: 'result', name: 'Result', kind: 'data', direction: 'out', dataType: 'number' },
+      ],
+      props: {},
+    });
+    doc.subgraphs = {
+      nested: {
+        version: GRAPH_VERSION,
+        nodes: [
+          {
+            id: 'n',
+            type: 'core/Number',
+            pins: [{ id: 'value', name: 'Value', kind: 'data', direction: 'out', dataType: 'number' }],
+            props: { value: 1 },
+            pos: { x: 4, y: 5 },
+          },
+        ],
+        edges: [],
+        groups: [],
+        comments: [{ id: 'c', text: 'note', rect: { x: 0, y: 0, w: 10, h: 10 } }],
+      },
+    };
+    const loaded = deserializeGraph(serializeGraph(doc));
+    expect(loaded.nodes[0]?.pos).toBeUndefined();
+    expect(loaded.subgraphs?.nested?.nodes[0]?.pos).toEqual({ x: 4, y: 5 });
+    const stripped = stripEditorData(loaded);
+    const strippedNode = stripped.nodes[0];
+    const nested = stripped.subgraphs?.nested;
+    const nestedNode = nested?.nodes[0];
+    expect(strippedNode && 'pos' in strippedNode).toBe(false);
+    expect(nested && 'comments' in nested).toBe(false);
+    expect(nestedNode && 'pos' in nestedNode).toBe(false);
+    const placed = loaded.nodes[0];
+    expect(placed).toBeTruthy();
+    if (placed) expect(pinAnchor(placed, 'result')?.x).toBe(220);
+  });
+
+  it('serializes the live document after every committed edit', () => {
+    const { controller, undo } = graph();
+    controller.addNode('core/Add', { x: 1, y: 2 });
+    const snapshot = serializeGraph(controller.getDocument());
+    expect(JSON.parse(snapshot)).toEqual(JSON.parse(JSON.stringify(controller.getDocument())));
+    expect(undo.canUndo()).toBe(true);
+    undo.undo();
+    expect(serializeGraph(controller.getDocument())).toBe(serializeGraph(createEmptyGraph()));
   });
 });

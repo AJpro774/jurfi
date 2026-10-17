@@ -6,9 +6,14 @@ export interface NodePropField {
   kind: 'string' | 'number' | 'boolean';
 }
 
-export interface NodeTypeDefinition {
-  type: string;
-  title: string;
+/**
+ * A node type the canvas can place. `typeId` is the document's `node.type`
+ * (`core/Add`, `anim/Clip`, …). `title`, `fields`, and `defaults` are optional
+ * canvas extras; a host can omit them.
+ */
+export interface NodeDefinition {
+  typeId: string;
+  title?: string;
   category: string;
   /** Short help shown in the palette and as the node's tooltip. */
   doc: string;
@@ -17,33 +22,49 @@ export interface NodeTypeDefinition {
   defaults?: Readonly<Record<string, unknown>>;
 }
 
-export interface NodeTypeRegistry {
-  register(definition: NodeTypeDefinition): void;
-  get(type: string): NodeTypeDefinition | undefined;
-  list(): NodeTypeDefinition[];
-  search(query: string): NodeTypeDefinition[];
+/** Domain-agnostic catalog. The canvas never hard-codes node types. */
+export interface NodeRegistry {
+  register(def: NodeDefinition): void;
+  get(typeId: string): NodeDefinition | undefined;
+  list(): readonly NodeDefinition[];
+}
+
+export function nodeTitle(def: NodeDefinition | undefined, typeId: string): string {
+  if (def?.title) return def.title;
+  const leaf = typeId.split('/').pop();
+  return leaf && leaf.length > 0 ? leaf : typeId;
+}
+
+export function searchNodes(registry: NodeRegistry, query: string): readonly NodeDefinition[] {
+  const needle = query.trim().toLowerCase();
+  const all = registry.list();
+  if (!needle) return all;
+  return all.filter((def) => {
+    const title = nodeTitle(def, def.typeId);
+    return `${title} ${def.typeId} ${def.category} ${def.doc}`.toLowerCase().includes(needle);
+  });
 }
 
 const execOut = (id: string, name: string): GraphPin => ({ id, name, kind: 'exec', direction: 'out' });
 const execIn = (id: string, name: string): GraphPin => ({ id, name, kind: 'exec', direction: 'in' });
 
-export const BUILTIN_NODES: readonly NodeTypeDefinition[] = [
+export const BUILTIN_NODES: readonly NodeDefinition[] = [
   {
-    type: 'event.onStart',
+    typeId: 'core/OnStart',
     title: 'On Start',
     category: 'Event',
     doc: 'Fires the exec output once when the script starts.',
     pins: [execOut('exec', 'Out')],
   },
   {
-    type: 'event.onTick',
+    typeId: 'core/OnTick',
     title: 'On Tick',
     category: 'Event',
     doc: 'Fires every frame. dt is the frame delta in seconds.',
     pins: [execOut('exec', 'Out'), { id: 'dt', name: 'dt', kind: 'data', direction: 'out', dataType: 'number' }],
   },
   {
-    type: 'flow.branch',
+    typeId: 'core/Branch',
     title: 'Branch',
     category: 'Flow',
     doc: 'Routes execution to True or False from a boolean condition.',
@@ -55,14 +76,14 @@ export const BUILTIN_NODES: readonly NodeTypeDefinition[] = [
     ],
   },
   {
-    type: 'flow.sequence',
+    typeId: 'core/Sequence',
     title: 'Sequence',
     category: 'Flow',
     doc: 'Runs Then 0 and then Then 1 in order.',
     pins: [execIn('exec', 'In'), execOut('then0', 'Then 0'), execOut('then1', 'Then 1')],
   },
   {
-    type: 'data.number',
+    typeId: 'core/Number',
     title: 'Number',
     category: 'Data',
     doc: 'Literal number value.',
@@ -71,7 +92,7 @@ export const BUILTIN_NODES: readonly NodeTypeDefinition[] = [
     defaults: { value: 0 },
   },
   {
-    type: 'data.string',
+    typeId: 'core/String',
     title: 'String',
     category: 'Data',
     doc: 'Literal string value.',
@@ -80,7 +101,7 @@ export const BUILTIN_NODES: readonly NodeTypeDefinition[] = [
     defaults: { value: '' },
   },
   {
-    type: 'data.bool',
+    typeId: 'core/Bool',
     title: 'Boolean',
     category: 'Data',
     doc: 'Literal boolean value.',
@@ -89,7 +110,7 @@ export const BUILTIN_NODES: readonly NodeTypeDefinition[] = [
     defaults: { value: false },
   },
   {
-    type: 'math.add',
+    typeId: 'core/Add',
     title: 'Add',
     category: 'Math',
     doc: 'Adds two numbers.',
@@ -100,7 +121,7 @@ export const BUILTIN_NODES: readonly NodeTypeDefinition[] = [
     ],
   },
   {
-    type: 'math.multiply',
+    typeId: 'core/Multiply',
     title: 'Multiply',
     category: 'Math',
     doc: 'Multiplies two numbers.',
@@ -111,7 +132,7 @@ export const BUILTIN_NODES: readonly NodeTypeDefinition[] = [
     ],
   },
   {
-    type: 'math.compare',
+    typeId: 'core/Compare',
     title: 'Compare',
     category: 'Math',
     doc: 'Compares two numbers. op is ==, <, or >.',
@@ -124,7 +145,7 @@ export const BUILTIN_NODES: readonly NodeTypeDefinition[] = [
     defaults: { op: '==' },
   },
   {
-    type: 'action.print',
+    typeId: 'core/Print',
     title: 'Print',
     category: 'Action',
     doc: 'Prints the message when execution arrives, then continues.',
@@ -135,7 +156,7 @@ export const BUILTIN_NODES: readonly NodeTypeDefinition[] = [
     ],
   },
   {
-    type: 'action.setVariable',
+    typeId: 'core/SetVariable',
     title: 'Set Variable',
     category: 'Action',
     doc: 'Writes a value to a named variable, then continues.',
@@ -148,7 +169,7 @@ export const BUILTIN_NODES: readonly NodeTypeDefinition[] = [
     defaults: { name: 'score' },
   },
   {
-    type: 'data.getVariable',
+    typeId: 'core/GetVariable',
     title: 'Get Variable',
     category: 'Data',
     doc: 'Reads a named variable.',
@@ -158,32 +179,23 @@ export const BUILTIN_NODES: readonly NodeTypeDefinition[] = [
   },
 ];
 
-export function createRegistry(definitions: readonly NodeTypeDefinition[] = []): NodeTypeRegistry {
-  const map = new Map<string, NodeTypeDefinition>();
-  const registry: NodeTypeRegistry = {
-    register(definition) {
-      map.set(definition.type, definition);
+export function createRegistry(definitions: readonly NodeDefinition[] = []): NodeRegistry {
+  const map = new Map<string, NodeDefinition>();
+  const registry: NodeRegistry = {
+    register(def) {
+      map.set(def.typeId, def);
     },
-    get(type) {
-      return map.get(type);
+    get(typeId) {
+      return map.get(typeId);
     },
     list() {
       return [...map.values()];
-    },
-    search(query) {
-      const needle = query.trim().toLowerCase();
-      const all = registry.list();
-      if (!needle) return all;
-      return all.filter((definition) => {
-        const haystack = `${definition.title} ${definition.type} ${definition.category} ${definition.doc}`.toLowerCase();
-        return haystack.includes(needle);
-      });
     },
   };
   for (const definition of definitions) registry.register(definition);
   return registry;
 }
 
-export function createDefaultRegistry(): NodeTypeRegistry {
+export function createDefaultRegistry(): NodeRegistry {
   return createRegistry(BUILTIN_NODES);
 }
