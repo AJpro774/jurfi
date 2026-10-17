@@ -15,7 +15,10 @@
     "@jurfi/render": "workspace:*",
     "@jurfi/physics": "workspace:*",
     "@jurfi/wasm": "workspace:*",
-    "@jurfi/ui": "workspace:*"
+    "@jurfi/ui": "workspace:*",
+    "@jurfi/input": "workspace:*",
+    "@jurfi/audio": "workspace:*",
+    "@jurfi/perf": "workspace:*"
   },
   "devDependencies": {
     "vite": "^8.3.4",
