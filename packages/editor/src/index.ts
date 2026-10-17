@@ -58,3 +58,6 @@ export { createEditor } from './shell';
 export type { CreateEditorOptions, Editor } from './shell';
 
 export { ensurePlaceholderPanels } from './panels';
+
+export { registerContentPanels } from './content/register';
+export { createDemoSnapshot, seedDemoLibrary } from './content/demo';

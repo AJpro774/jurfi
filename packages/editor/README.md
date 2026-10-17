@@ -45,6 +45,10 @@ Placeholder ids the shell installs when nobody has claimed them yet:
 | `inspector` | Inspector | Right |
 | `console` | Console | Bottom dock |
 
+`registerContentPanels()` replaces the `hierarchy`, `inspector`, and `assets` placeholders with the built-in panels. Call it before `createEditor`. The editor app does that, passes `createWorld(createDemoSnapshot())`, and calls `seedDemoLibrary(ctx)` so the asset browser has sample files for the session.
+
+Visibility and lock are stored on each entity as `jurfi.flags` (`{ visible, locked }`). Missing flags mean visible and unlocked. The asset library hangs off the editor context and is not written into the project file.
+
 ## EditorContext
 
 `createEditorContext()` builds a headless context (no DOM). `createEditor({ root })` mounts the shell into an element and uses the same context object (`editor.ctx`).
