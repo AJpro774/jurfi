@@ -11,7 +11,7 @@ const webgpuArgs = [
 ];
 
 const common = {
-  viewport: { width: 1280, height: 720 },
+  viewport: { width: 1280, height: 800 },
   deviceScaleFactor: 1,
   reducedMotion: 'reduce' as const,
   colorScheme: 'dark' as const,
