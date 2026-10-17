@@ -1,0 +1,91 @@
+{
+ "schemaVersion": 1,
+ "frames": [
+  {
+   "cpuMs": 3,
+   "gpuMs": 3,
+   "systems": {
+    "physics": 0.5,
+    "render": 2
+   }
+  },
+  {
+   "cpuMs": 3,
+   "gpuMs": 3,
+   "systems": {
+    "physics": 0.5,
+    "render": 2
+   }
+  },
+  {
+   "cpuMs": 3,
+   "gpuMs": 3,
+   "systems": {
+    "physics": 0.5,
+    "render": 2
+   }
+  },
+  {
+   "cpuMs": 3,
+   "gpuMs": 3,
+   "systems": {
+    "physics": 0.5,
+    "render": 2
+   }
+  },
+  {
+   "cpuMs": 3,
+   "gpuMs": 3,
+   "systems": {
+    "physics": 0.5,
+    "render": 2
+   }
+  },
+  {
+   "cpuMs": 3,
+   "gpuMs": 3,
+   "systems": {
+    "physics": 0.5,
+    "render": 2
+   }
+  },
+  {
+   "cpuMs": 3,
+   "gpuMs": 3,
+   "systems": {
+    "physics": 0.5,
+    "render": 2
+   }
+  },
+  {
+   "cpuMs": 3,
+   "gpuMs": 3,
+   "systems": {
+    "physics": 0.5,
+    "render": 2
+   }
+  },
+  {
+   "cpuMs": 3,
+   "gpuMs": 3,
+   "systems": {
+    "physics": 0.5,
+    "render": 2
+   }
+  },
+  {
+   "cpuMs": 7.5,
+   "gpuMs": 3,
+   "systems": {
+    "physics": 0.5,
+    "render": 2
+   }
+  }
+ ],
+ "budgets": {
+  "cpuFrameMs": 8,
+  "gpuFrameMs": 8,
+  "gcSpikeMs": 4,
+  "heapGrowthMBPerSec": 1
+ }
+}

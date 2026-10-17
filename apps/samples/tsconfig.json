@@ -10,6 +10,7 @@
     "src",
     "*.ts",
     "pong",
+    "marble",
     "samples"
   ]
 }

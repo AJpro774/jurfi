@@ -4,9 +4,12 @@
   "description": "Jurfi editor",
   "license": "MIT",
   "type": "module",
-  "sideEffects": false,
+  "sideEffects": [
+    "*.css"
+  ],
   "files": [
-    "dist"
+    "dist",
+    "src/shell.css"
   ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -14,7 +17,8 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    }
+    },
+    "./shell.css": "./src/shell.css"
   },
   "scripts": {
     "build": "tsup",

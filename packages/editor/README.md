@@ -1,31 +1,184 @@
 # @jurfi/editor
 
-Editor-only package. Exported games and `apps/samples` must never import it.
+Editor shell for Jurfi. Panel packages (`viewport`, hierarchy, inspector, asset browser, node graph, timeline) register a view and talk to the editor through `EditorContext`. Games and samples must never import this package.
+
+`@jurfi/core` does not export an ECS world yet. `EditorContext.world` is the editor's JSON scene document (`EditorWorld`): entities with a name, a parent, and a JSON component bag. Save/load, undo, and play mode all snapshot that document. When core ships an ECS, a world that implements `EditorWorld` can be passed to `createEditorContext({ world })`.
+
+## Register a panel
+
+```ts
+import { registerPanel, type EditorContext } from '@jurfi/editor';
+
+registerPanel({
+  id: 'hierarchy',
+  title: 'Hierarchy',
+  mount(el, ctx: EditorContext) {
+    el.textContent = 'Hierarchy';
+    const off = ctx.selection.subscribe(() => {
+      /* refresh */
+    });
+    return () => off();
+  },
+});
+```
+
+`registerPanel({ id, title, mount(el, ctx) })` stores the definition in the process-wide registry. `mount` receives the zone body and the live `EditorContext`. It may return a dispose function; the shell calls that function before emptying the host or swapping panels.
+
+Registering the same `id` again replaces the previous definition and keeps its place in the registry. The shell remounts any zone showing that id, so a real panel can take over a placeholder either before `createEditor` or afterwards. The returned function unregisters the panel only if that definition is still the current one.
+
+| Function | Role |
+| --- | --- |
+| `registerPanel(def)` | Add or replace a panel. Returns an unregister function. |
+| `getPanel(id)` | Current definition, or `undefined`. |
+| `listPanels()` | Definitions in registration order. |
+| `subscribePanels(listener)` | Fires with `(id, 'register' \| 'remove')` on add, replace, and remove. |
+
+Placeholder ids the shell installs when nobody has claimed them yet:
+
+| id | Title | Default zone |
+| --- | --- | --- |
+| `hierarchy` | Hierarchy | Left, top |
+| `assets` | Asset Browser | Left, bottom |
+| `viewport` | Viewport | Center (active tab) |
+| `nodegraph` | Node Graph | Center |
+| `timeline` | Timeline | Center |
+| `inspector` | Inspector | Right |
+| `console` | Console | Bottom dock |
+
+## EditorContext
+
+`createEditorContext()` builds a headless context (no DOM). `createEditor({ root })` mounts the shell into an element and uses the same context object (`editor.ctx`).
+
+```ts
+export interface EditorContext {
+  readonly world: EditorWorld;
+  readonly selection: Selection;
+  readonly undo: UndoStack;
+  readonly commands: CommandRegistry;
+  readonly bus: EditorBus;
+  getPlayState(): PlayState; // 'editing' | 'playing' | 'paused'
+  play(): void;
+  pause(): void;
+  stop(): void;
+  step(): void;
+  getGizmoMode(): GizmoMode; // 'translate' | 'rotate' | 'scale'
+  setGizmoMode(mode: GizmoMode): void;
+}
+```
+
+### Selection
+
+`selection.get()` returns the ordered entity ids. `selection.set(ids)` replaces them and notifies subscribers when the list actually changes. `selection.subscribe(listener)` returns an unsubscribe function. A change also emits `selection:changed` on the bus.
+
+### World
+
+```ts
+interface EntityRecord {
+  id: string;
+  name: string;
+  parentId: string | null;
+  components: Record<string, unknown>; // JSON values only
+}
+
+interface EditorWorld {
+  entities(): readonly EntityRecord[];
+  get(id: string): EntityRecord | undefined;
+  add(entity: EntityRecord): void;
+  update(id: string, patch: Partial<Omit<EntityRecord, 'id'>>): void;
+  remove(id: string): void; // children are reparented to the removed entity's parent
+  serialize(): WorldSnapshot;
+  deserialize(snapshot: WorldSnapshot): void;
+  subscribe(listener: () => void): () => void;
+}
+```
+
+`get` and `entities` return copies. Mutate through `update`, `add`, and `remove`. Every mutation emits `world:changed` with `{ snapshot }`. Do not write the world from a `world:changed` listener.
+
+`remove` deletes one entity and points its children at that entity's parent.
+
+### Undo stack
+
+Undo commands are separate from palette commands. Push a command **after** the edit is already applied. `push` does not call `redo`.
+
+```ts
+interface UndoCommand {
+  label: string;
+  mergeKey?: string;
+  merge?(previous: UndoCommand): boolean;
+  undo(): void;
+  redo(): void;
+}
+```
+
+Consecutive `push` calls that share a `mergeKey` become one history step. Undo or redo breaks the run, so the next push starts a new step even when the key matches. The default merge keeps the earlier `undo` (the original baseline) and the later `redo` (the newest value), which is the right behavior when `undo` / `redo` assign absolute state. Pass `merge(previous)` and return `false` to keep the commands separate, or return `true` after folding `previous` in yourself.
+
+`undo()` and `redo()` return `false` at the ends of the stack. A new `push` clears the redo stack. `subscribe` receives `'push' | 'undo' | 'redo' | 'clear'` after the world change for undo and redo. The stack caps at 200 entries.
+
+Keyboard: Ctrl/Cmd+Z undoes, Ctrl/Cmd+Shift+Z and Ctrl/Cmd+Y redo (wired by the shell).
+
+### Commands
+
+Palette and menu actions:
+
+```ts
+interface EditorCommand {
+  id: string;
+  title: string;
+  shortcut?: string; // 'Mod+K', 'Mod+Shift+Z', ...
+  group?: string;
+  when?: () => boolean;
+  run(): void;
+}
+```
+
+`commands.register` replaces the same id. `commands.execute(id)` runs `run` and returns `false` when the id is missing or `when()` is false. A successful execute emits `command:executed`. `Mod` is Cmd on Apple platforms and Ctrl elsewhere. The command palette (Ctrl/Cmd+K) lists `commands.list()`.
+
+### Event bus
+
+`bus.on(type, listener)` returns an unsubscribe function. `bus.emit(type, payload)` notifies current listeners. Known payloads:
+
+| Event | Payload |
+| --- | --- |
+| `selection:changed` | `{ ids: readonly string[] }` |
+| `world:changed` | `{ snapshot: WorldSnapshot }` |
+| `play:changed` | `{ state: PlayState }` |
+| `play:step` | `{ state: PlayState }` |
+| `gizmo:changed` | `{ mode: GizmoMode }` |
+| `layout:changed` | `{ layout }` |
+| `layout:reset` | `{ layout }` |
+| `project:saved` | `{ name: string }` |
+| `project:loaded` | `{ name: string }` |
+| `status` | `{ message: string; level: 'info' \| 'warn' \| 'error' }` |
+| `command:executed` | `{ id: string }` |
+
+Other string event names are allowed; their payload is `unknown` unless you agree on a shape with the listener.
+
+### Play mode
+
+`play()` stores `world.serialize()` the first time the session leaves editing, then sets the state to `playing`. `pause()` only applies while playing. `play()` from paused resumes and keeps the original snapshot. `stop()` deserializes that snapshot, clears the undo stack, and returns to `editing`. `step()` snapshots if needed, forces `paused`, and emits `play:step`. Nothing in the shell ticks a game loop; the snapshot boundary is the scaffold a runtime can hook.
+
+## Shell
+
+`createEditor({ root, world?, storage? })` mounts the dock, menu bar, toolbar, command palette, and status bar into `root`. It registers a placeholder for any standard panel id that is still empty. Layout (zone sizes, tab order, collapsed dock) is stored in `localStorage` under `jurfi.editor.layout`. Reset Layout restores the default and clears that key.
+
+Project files are JSON (`format: 'jurfi-project'`, version 1) containing the world snapshot and the layout. File → Save downloads that JSON. File → Open reads a file the user picks. An autosave of the same document is written to `localStorage` under `jurfi.editor.autosave` and restored on the next launch.
 
 ## Node graph
 
-`mountNodeGraph(element, document, options)` mounts the visual scripting panel. It returns a handle with `onChange`, `select`, `frame`, `setDebugSource`, `undo`, and `redo`.
+`registerNodeGraphPanel()` claims the `nodegraph` panel id. Call it before `createEditor` so the shell placeholder is never installed. The panel uses `EditorContext.undo`: each edit is applied, then pushed. `push` does not call `redo`. Tab switches remount the view against the same controller, so undo closures stay valid.
+
+`mountNodeGraph(element, document, options)` mounts the same canvas without the dock. Pass `options.undo` to share a stack. Otherwise it creates a private `UndoStack`. The handle exposes `onChange`, `select`, `frame`, `setDebugSource`, `undo`, and `redo`.
 
 ```ts
-import { createDemoGraph, mountNodeGraph } from '@jurfi/editor';
+import { createEditor, registerNodeGraphPanel } from '@jurfi/editor';
 
-const graph = mountNodeGraph(element, createDemoGraph());
-graph.onChange((doc) => {
-  // doc is the full graph, including editor-only pos / groups / comments
-  void doc.version;
-});
-graph.setDebugSource({ executingNodeIds: ['node_1'], values: { 'node_4:value': 'Hello, Jurfi' } });
+registerNodeGraphPanel();
+createEditor({ root });
 ```
 
-Graph document types (`GraphDocument`, pins, edges) are imported from `@jurfi/script`. `packages/script/src/graph.ts` is a **provisional stub** (`GRAPH_TYPES_STUB`) until the Script Compiler publishes the schema.
+Graph document types (`GraphDocument`, pins, edges) come from `@jurfi/script`. `packages/script/src/graph.ts` is a provisional stub (`GRAPH_TYPES_STUB`) until the Script Compiler publishes the schema. `pos`, `groups`, and `comments` are editor-only. `stripEditorData(doc)` removes them for export.
 
-`pos`, `groups`, and `comments` are editor-only. `stripEditorData(doc)` removes them for export.
-
-### Undo
-
-Every document edit is a command. The Editor Shell command bus, panel registry, and `EditorContext` are **not on main** (shell owner fc90dcbf). The panel talks to a thin `CommandBus` adapter (`createLocalCommandBus`). Pass `options.commandBus` or `options.editorContext.commandBus` to attach the shell bus later. `execute` must call `command.do()` synchronously.
-
-### Run it
+While the editor is playing, the panel highlights nodes and shows data-pin values from node props. `setDebugSource` accepts a live source from a real runtime.
 
 ```bash
 pnpm --filter @jurfi/ui build
@@ -33,4 +186,4 @@ pnpm --filter @jurfi/core build
 pnpm --filter @jurfi/editor-app dev
 ```
 
-The editor app opens the graph. Wheel zooms, Alt-drag or middle-drag pans, drag on empty space box-selects, Shift-click toggles multi-select. Search the palette, drag a node type onto the canvas, and use Undo / Redo.
+Open the Node Graph tab. Wheel zooms, Alt-drag or middle-drag pans, drag on empty space box-selects, and Shift-click toggles multi-select. Search the palette, drag a node type onto the canvas, and use Undo / Redo. Ctrl/Cmd+Z follows the shell shortcut and the graph toolbar.

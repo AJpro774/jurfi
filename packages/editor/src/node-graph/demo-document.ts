@@ -1,5 +1,5 @@
 import type { GraphEndpoint } from '@jurfi/script';
-import { createLocalCommandBus } from '../shell/command-bus';
+import { createUndoStack } from '../undo';
 import { createGraphController } from './controller';
 import { nodeRect, padRect, unionRects } from './geometry';
 import { createDefaultRegistry } from './registry';
@@ -11,7 +11,7 @@ export function createDemoGraph() {
   const controller = createGraphController({
     document: createEmptyGraph(),
     registry,
-    bus: createLocalCommandBus(),
+    undo: createUndoStack(),
   });
 
   const start = must(controller.addNode('event.onStart', { x: 48, y: 72 }));

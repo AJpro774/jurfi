@@ -175,7 +175,7 @@ export class NodeGraphView {
       if (this.drag.kind === 'none') this.render();
       else this.syncFrame();
     });
-    this.stopBus = controller.bus.subscribe?.(() => this.syncHistory()) ?? (() => {});
+    this.stopBus = controller.undo.subscribe(() => this.syncHistory());
     this.resizeObserver = new ResizeObserver(() => {
       if (!this.didFrame && this.stage.clientWidth > 40 && this.stage.clientHeight > 40) {
         this.didFrame = true;
@@ -262,11 +262,11 @@ export class NodeGraphView {
   }
 
   undo(): void {
-    this.controller.bus.undo();
+    this.controller.undo.undo();
   }
 
   redo(): void {
-    this.controller.bus.redo();
+    this.controller.undo.redo();
   }
 
   private render(): void {
@@ -542,8 +542,8 @@ export class NodeGraphView {
   }
 
   private syncHistory(): void {
-    this.undoButton.disabled = !this.controller.bus.canUndo();
-    this.redoButton.disabled = !this.controller.bus.canRedo();
+    this.undoButton.disabled = !this.controller.undo.canUndo();
+    this.redoButton.disabled = !this.controller.undo.canRedo();
   }
 
   private onStagePointerDown(event: PointerEvent): void {
@@ -771,12 +771,14 @@ export class NodeGraphView {
     const meta = event.metaKey || event.ctrlKey;
     if (meta && event.key.toLowerCase() === 'z') {
       event.preventDefault();
+      event.stopPropagation();
       if (event.shiftKey) this.redo();
       else this.undo();
       return;
     }
     if (meta && event.key.toLowerCase() === 'y') {
       event.preventDefault();
+      event.stopPropagation();
       this.redo();
       return;
     }

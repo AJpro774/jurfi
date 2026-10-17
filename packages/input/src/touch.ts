@@ -60,9 +60,19 @@ export class VirtualStick {
 }
 
 export class VirtualButton {
+  /** True while held, and also until the next update() if a press started and ended since the previous update. */
   pressed = false;
   touchId = -1;
+  /** Down since the last latch(). */
+  pending = false;
+  /** Down between the previous two latch() calls; keeps `pressed` true until the next latch(). */
+  latched = false;
   constructor(public readonly id: string, public left: number, public top: number, public width: number, public height: number) {}
+  /** Called by Input.update(). */
+  latch(): void {
+    this.latched = this.pending; this.pending = false;
+    this.pressed = this.touchId !== -1 || this.latched;
+  }
   contains(px: number, py: number): boolean {
     return px >= this.left && px < this.left + this.width && py >= this.top && py < this.top + this.height;
   }
@@ -109,6 +119,11 @@ export class TouchControls {
       target.removeEventListener('touchend', e);
       target.removeEventListener('touchcancel', e);
     };
+  }
+
+  /** Called by Input.update(): roll button press latches forward one frame. */
+  latch(): void {
+    for (let k = 0; k < this.buttons.length; k++) (this.buttons[k] as VirtualButton).latch();
   }
 
   addStick(stick: VirtualStick): VirtualStick { this.sticks.push(stick); return stick; }
@@ -160,7 +175,7 @@ export class TouchControls {
       }
       for (let k = 0; k < this.buttons.length; k++) {
         const b = this.buttons[k] as VirtualButton;
-        if (b.touchId === -1 && b.contains(t.clientX, t.clientY)) { b.pressed = true; b.touchId = t.identifier; }
+        if (b.touchId === -1 && b.contains(t.clientX, t.clientY)) { b.pressed = true; b.pending = true; b.touchId = t.identifier; }
       }
     }
   };
@@ -186,7 +201,7 @@ export class TouchControls {
       }
       for (let k = 0; k < this.buttons.length; k++) {
         const b = this.buttons[k] as VirtualButton;
-        if (b.touchId === t.identifier) { b.pressed = false; b.touchId = -1; }
+        if (b.touchId === t.identifier) { b.touchId = -1; b.pressed = b.pending || b.latched; }
       }
     }
   };

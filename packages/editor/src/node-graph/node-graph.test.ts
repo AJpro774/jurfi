@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { GRAPH_VERSION } from '@jurfi/script';
 import type { GraphDocument, GraphEndpoint } from '@jurfi/script';
-import { createLocalCommandBus, resolveCommandBus } from '../shell/command-bus';
-import type { CommandBus } from '../shell/command-bus';
+import { createUndoStack } from '../undo';
+import type { UndoStack } from '../undo';
 import { createGraphController, createIdFactory } from './controller';
+import type { GraphController } from './controller';
 import { formatDebugValue, lookupWireValue } from './debug';
 import { createDemoGraph } from './demo-document';
 import { pinAnchor, wireGeometry } from './geometry';
@@ -12,15 +13,15 @@ import { idsTouchingRect, mergeIds, toggleMember } from './selection';
 import { createEmptyGraph, deserializeGraph, GraphSchemaError, serializeGraph, stripEditorData } from './serialize';
 import { evaluateConnection, validateGraph } from './validate';
 
-function graph(): { controller: ReturnType<typeof createGraphController>; bus: CommandBus } {
-  const bus = createLocalCommandBus();
+function graph(): { controller: GraphController; undo: UndoStack } {
+  const undo = createUndoStack();
   const controller = createGraphController({
     document: createEmptyGraph(),
     registry: createDefaultRegistry(),
-    bus,
+    undo,
     ids: createIdFactory(),
   });
-  return { controller, bus };
+  return { controller, undo };
 }
 
 function end(node: string, pin: string): GraphEndpoint {
@@ -159,7 +160,7 @@ describe('serialization', () => {
 
 describe('commands', () => {
   it('undoes and redoes add, connect, move, prop edits, and delete', () => {
-    const { controller, bus } = graph();
+    const { controller, undo } = graph();
     const start = controller.addNode('event.onStart', { x: 1, y: 2 }) ?? '';
     const print = controller.addNode('action.print', { x: 20, y: 30 }) ?? '';
     controller.connect(end(start, 'exec'), end(print, 'exec'));
@@ -168,22 +169,22 @@ describe('commands', () => {
     expect(controller.getDocument().nodes).toHaveLength(2);
     expect(controller.getDocument().edges).toHaveLength(1);
 
-    bus.undo();
+    undo.undo();
     expect(controller.getDocument().nodes.find((node) => node.id === print)?.props.note).toBeUndefined();
-    bus.undo();
+    undo.undo();
     expect(controller.getDocument().nodes.find((node) => node.id === print)?.pos).toEqual({ x: 20, y: 30 });
-    bus.undo();
+    undo.undo();
     expect(controller.getDocument().edges).toHaveLength(0);
-    bus.undo();
-    bus.undo();
+    undo.undo();
+    undo.undo();
     expect(controller.getDocument().nodes).toHaveLength(0);
-    expect(bus.canUndo()).toBe(false);
+    expect(undo.canUndo()).toBe(false);
 
-    bus.redo();
-    bus.redo();
-    bus.redo();
-    bus.redo();
-    bus.redo();
+    undo.redo();
+    undo.redo();
+    undo.redo();
+    undo.redo();
+    undo.redo();
     const restored = controller.getDocument();
     expect(restored.nodes).toHaveLength(2);
     expect(restored.edges).toHaveLength(1);
@@ -192,28 +193,23 @@ describe('commands', () => {
 
     controller.remove({ nodes: [print], comments: [], groups: [], edge: null });
     expect(controller.getDocument().edges).toHaveLength(0);
-    bus.undo();
+    undo.undo();
     expect(controller.getDocument().edges).toHaveLength(1);
     expect(controller.getDocument().nodes.map((node) => node.id)).toContain(print);
   });
 
   it('does not record a rejected connection or a no-op move', () => {
     const labels: string[] = [];
-    const inner = createLocalCommandBus();
-    const bus: CommandBus = {
-      execute(command) {
-        labels.push(command.label);
-        inner.execute(command);
-      },
-      undo: () => inner.undo(),
-      redo: () => inner.redo(),
-      canUndo: () => inner.canUndo(),
-      canRedo: () => inner.canRedo(),
+    const undo = createUndoStack();
+    const push = undo.push.bind(undo);
+    undo.push = (command) => {
+      labels.push(command.label);
+      push(command);
     };
     const controller = createGraphController({
       document: createEmptyGraph(),
       registry: createDefaultRegistry(),
-      bus,
+      undo,
     });
     const number = controller.addNode('data.number', { x: 0, y: 0 }) ?? '';
     const print = controller.addNode('action.print', { x: 10, y: 10 }) ?? '';
@@ -222,8 +218,29 @@ describe('commands', () => {
     expect(labels).toEqual(['Add node', 'Add node']);
   });
 
+  it('applies the edit before recording the undo command', () => {
+    const undo = createUndoStack();
+    const controller = createGraphController({
+      document: createEmptyGraph(),
+      registry: createDefaultRegistry(),
+      undo,
+    });
+    let nodesAtPush = -1;
+    const push = undo.push.bind(undo);
+    undo.push = (command) => {
+      nodesAtPush = controller.getDocument().nodes.length;
+      push(command);
+    };
+    controller.addNode('data.number', { x: 0, y: 0 });
+    expect(nodesAtPush).toBe(1);
+    expect(undo.undo()).toBe(true);
+    expect(controller.getDocument().nodes).toHaveLength(0);
+    expect(undo.redo()).toBe(true);
+    expect(controller.getDocument().nodes).toHaveLength(1);
+  });
+
   it('undoes comments, groups, and paste', () => {
-    const { controller, bus } = graph();
+    const { controller, undo } = graph();
     const first = controller.addNode('math.add', { x: 0, y: 0 }) ?? '';
     const second = controller.addNode('math.add', { x: 40, y: 0 }) ?? '';
     controller.connect(end(first, 'result'), end(second, 'a'));
@@ -239,16 +256,16 @@ describe('commands', () => {
     expect(controller.getDocument().comments).toHaveLength(2);
     expect(controller.getDocument().groups).toHaveLength(2);
 
-    bus.undo();
+    undo.undo();
     expect(controller.getDocument().nodes).toHaveLength(2);
     expect(controller.getDocument().comments).toHaveLength(1);
-    bus.undo();
+    undo.undo();
     expect(controller.getDocument().groups[0]?.title).toBe('Math');
-    bus.undo();
+    undo.undo();
     expect(controller.getDocument().groups).toHaveLength(0);
-    bus.undo();
+    undo.undo();
     expect(controller.getDocument().comments[0]?.text).toBe('Note');
-    bus.redo();
+    undo.redo();
     expect(controller.getDocument().comments[0]?.text).toBe('Edited');
   });
 
@@ -260,24 +277,16 @@ describe('commands', () => {
     expect(controller.getDocument().nodes).toHaveLength(1);
   });
 
-  it('prefers an explicit bus over the editor context', () => {
-    const local = createLocalCommandBus();
-    const contextBus = createLocalCommandBus();
-    expect(resolveCommandBus({ commandBus: local, editorContext: { commandBus: contextBus } })).toBe(local);
-    expect(resolveCommandBus({ editorContext: { commandBus: contextBus } })).toBe(contextBus);
-    expect(resolveCommandBus({}).canUndo()).toBe(false);
-  });
-
   it('blocks edits when read only', () => {
-    const bus = createLocalCommandBus();
+    const undo = createUndoStack();
     const controller = createGraphController({
       document: createEmptyGraph(),
       registry: createDefaultRegistry(),
-      bus,
+      undo,
       readOnly: true,
     });
     expect(controller.addNode('data.number', { x: 0, y: 0 })).toBeNull();
-    expect(bus.canUndo()).toBe(false);
+    expect(undo.canUndo()).toBe(false);
   });
 });
 

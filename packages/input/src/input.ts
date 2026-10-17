@@ -165,6 +165,8 @@ export class Input {
   /** Poll devices and recompute every action. Call once per frame, before game logic. */
   update(): void {
     this.gamepads.poll();
+    this.keyboard.latch();
+    this.touch.latch();
     this.mouse.latch();
     const tp = this.touch.pointer, mp = this.mouse.pointer;
     if (tp.active && tp.stamp >= mp.stamp) this.pointer.copyFrom(tp);
@@ -212,11 +214,11 @@ export class Input {
   private scalar(b: Binding): number {
     switch (b.device) {
       case 'key':
-        if ('code' in b) return this.keyboard.isDown(b.code) ? 1 : 0;
+        if ('code' in b) return this.keyboard.isDown(b.code) || this.keyboard.wasPressed(b.code) ? 1 : 0;
         if ('negative' in b) return (this.keyboard.isDown(b.positive) ? 1 : 0) - (this.keyboard.isDown(b.negative) ? 1 : 0);
         return 0;
       case 'mouse':
-        if ('button' in b) return this.mouse.isDown(b.button) ? 1 : 0;
+        if ('button' in b) return this.mouse.isDown(b.button) || this.mouse.wasPressed(b.button) ? 1 : 0;
         if (b.delta === 'x') return this.mouse.frameDx * (b.scale ?? 1);
         if (b.delta === 'y') return this.mouse.frameDy * (b.scale ?? 1);
         if (b.delta === 'wheel') return this.mouse.frameWheel * (b.scale ?? 1);

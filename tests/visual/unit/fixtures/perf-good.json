@@ -1,0 +1,51 @@
+{
+ "schemaVersion": 1,
+ "frames": [
+  {
+   "cpuMs": 5,
+   "gpuMs": 4,
+   "systems": {
+    "physics": 0.5,
+    "render": 2
+   }
+  },
+  {
+   "cpuMs": 5.5,
+   "gpuMs": 4.2,
+   "systems": {
+    "physics": 0.5,
+    "render": 2
+   }
+  },
+  {
+   "cpuMs": 6,
+   "gpuMs": 5,
+   "systems": {
+    "physics": 0.5,
+    "render": 2
+   }
+  },
+  {
+   "cpuMs": 5.2,
+   "gpuMs": 4.5,
+   "systems": {
+    "physics": 0.5,
+    "render": 2
+   }
+  },
+  {
+   "cpuMs": 5,
+   "gpuMs": 4,
+   "systems": {
+    "physics": 0.5,
+    "render": 2
+   }
+  }
+ ],
+ "budgets": {
+  "cpuFrameMs": 8,
+  "gpuFrameMs": 8,
+  "gcSpikeMs": 4,
+  "heapGrowthMBPerSec": 1
+ }
+}

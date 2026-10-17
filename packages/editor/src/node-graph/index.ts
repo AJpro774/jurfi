@@ -1,6 +1,3 @@
-export { createLocalCommandBus, resolveCommandBus } from '../shell/command-bus';
-export type { Command, CommandBus } from '../shell/command-bus';
-export type { EditorContext, EditorPanelRegistration } from '../shell/editor-context';
 export { extractClipboard, pasteClipboard } from './clipboard';
 export type { GraphClipboard } from './clipboard';
 export { createGraphController, createIdFactory } from './controller';
@@ -9,7 +6,7 @@ export { formatDebugValue, lookupWireValue } from './debug';
 export type { NodeGraphDebugSource } from './debug';
 export { createDemoGraph } from './demo-document';
 export { LAYOUT, nodeRect, pinAnchor, wireGeometry } from './geometry';
-export { mountNodeGraph } from './mount';
+export { mountNodeGraph, registerNodeGraphPanel } from './mount';
 export type { NodeGraphHandle, NodeGraphOptions } from './mount';
 export { BUILTIN_NODES, createDefaultRegistry, createRegistry } from './registry';
 export type { NodePropField, NodeTypeDefinition, NodeTypeRegistry } from './registry';

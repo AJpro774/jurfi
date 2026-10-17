@@ -1,0 +1,171 @@
+{
+ "schemaVersion": 1,
+ "frames": [
+  {
+   "cpuMs": 8.5,
+   "gpuMs": 7,
+   "systems": {
+    "physics": 0.5,
+    "render": 2
+   }
+  },
+  {
+   "cpuMs": 8.5,
+   "gpuMs": 7,
+   "systems": {
+    "physics": 0.5,
+    "render": 2
+   }
+  },
+  {
+   "cpuMs": 8.5,
+   "gpuMs": 7,
+   "systems": {
+    "physics": 0.5,
+    "render": 2
+   }
+  },
+  {
+   "cpuMs": 8.5,
+   "gpuMs": 7,
+   "systems": {
+    "physics": 0.5,
+    "render": 2
+   }
+  },
+  {
+   "cpuMs": 8.5,
+   "gpuMs": 7,
+   "systems": {
+    "physics": 0.5,
+    "render": 2
+   }
+  },
+  {
+   "cpuMs": 8.5,
+   "gpuMs": 7,
+   "systems": {
+    "physics": 0.5,
+    "render": 2
+   }
+  },
+  {
+   "cpuMs": 8.5,
+   "gpuMs": 7,
+   "systems": {
+    "physics": 0.5,
+    "render": 2
+   }
+  },
+  {
+   "cpuMs": 8.5,
+   "gpuMs": 7,
+   "systems": {
+    "physics": 0.5,
+    "render": 2
+   }
+  },
+  {
+   "cpuMs": 8.5,
+   "gpuMs": 7,
+   "systems": {
+    "physics": 0.5,
+    "render": 2
+   }
+  },
+  {
+   "cpuMs": 8.5,
+   "gpuMs": 7,
+   "systems": {
+    "physics": 0.5,
+    "render": 2
+   }
+  },
+  {
+   "cpuMs": 8.5,
+   "gpuMs": 7,
+   "systems": {
+    "physics": 0.5,
+    "render": 2
+   }
+  },
+  {
+   "cpuMs": 8.5,
+   "gpuMs": 7,
+   "systems": {
+    "physics": 0.5,
+    "render": 2
+   }
+  },
+  {
+   "cpuMs": 8.5,
+   "gpuMs": 7,
+   "systems": {
+    "physics": 0.5,
+    "render": 2
+   }
+  },
+  {
+   "cpuMs": 8.5,
+   "gpuMs": 7,
+   "systems": {
+    "physics": 0.5,
+    "render": 2
+   }
+  },
+  {
+   "cpuMs": 8.5,
+   "gpuMs": 7,
+   "systems": {
+    "physics": 0.5,
+    "render": 2
+   }
+  },
+  {
+   "cpuMs": 8.5,
+   "gpuMs": 7,
+   "systems": {
+    "physics": 0.5,
+    "render": 2
+   }
+  },
+  {
+   "cpuMs": 8.5,
+   "gpuMs": 7,
+   "systems": {
+    "physics": 0.5,
+    "render": 2
+   }
+  },
+  {
+   "cpuMs": 8.5,
+   "gpuMs": 7,
+   "systems": {
+    "physics": 0.5,
+    "render": 2
+   }
+  },
+  {
+   "cpuMs": 8.5,
+   "gpuMs": 7,
+   "systems": {
+    "physics": 0.5,
+    "render": 2
+   }
+  },
+  {
+   "cpuMs": 8.5,
+   "gpuMs": 7,
+   "systems": {
+    "physics": 0.5,
+    "render": 2
+   }
+  }
+ ],
+ "budgets": {
+  "cpuFrameMs": 8,
+  "gpuFrameMs": 8,
+  "gcSpikeMs": 4,
+  "heapGrowthMBPerSec": 1
+ }
+}

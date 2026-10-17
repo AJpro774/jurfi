@@ -27,6 +27,11 @@ class Input {
 type ActionType = 'button' | 'axis1d' | 'axis2d';
 ```
 
+Press latching: a key/mouse/touch-button press that starts and ends between two `update()` calls is not lost. Any down since the
+previous `update()` makes the action (and `VirtualButton.pressed`) read pressed/justPressed through the next poll; it clears on the
+following `update()`. Holds are unchanged. Auto-repeat keydowns are ignored, and gamepad buttons and axis-type bindings are sampled
+state, so they are not latched.
+
 Bindings (`device` = `key` | `mouse` | `gamepad` | `touch`): `{device:'key', code}`, `{device:'key', negative, positive}`,
 `{device:'key', up, down, left, right}`, `{device:'mouse', button}`, `{device:'mouse', delta:'x'|'y'|'wheel'|'move', scale?}`,
 `{device:'gamepad', button|axis|stick, pad?}`, `{device:'touch', control}`. 2D convention: up is `y = -1`.

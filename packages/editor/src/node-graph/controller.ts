@@ -1,5 +1,5 @@
 import type { GraphDocument, GraphEndpoint, GraphRect, Vec2 } from '@jurfi/script';
-import type { CommandBus } from '../shell/command-bus';
+import type { UndoStack } from '../undo';
 import { extractClipboard, pasteClipboard } from './clipboard';
 import type { GraphClipboard } from './clipboard';
 import type { NodeTypeRegistry } from './registry';
@@ -19,7 +19,7 @@ export function createIdFactory(start = 1): IdFactory {
 }
 
 export interface GraphController {
-  readonly bus: CommandBus;
+  readonly undo: UndoStack;
   getDocument(): GraphDocument;
   subscribe(listener: () => void): () => void;
   addNode(type: string, pos: Vec2): string | null;
@@ -49,7 +49,7 @@ export interface GraphEndpointPair {
 export function createGraphController(options: {
   document: GraphDocument;
   registry: NodeTypeRegistry;
-  bus: CommandBus;
+  undo: UndoStack;
   ids?: IdFactory;
   readOnly?: boolean;
 }): GraphController {
@@ -67,14 +67,16 @@ export function createGraphController(options: {
     mutate(draft);
     if (JSON.stringify(before) === JSON.stringify(draft)) return false;
     const after = cloneDoc(draft);
-    options.bus.execute({
+    doc = after;
+    emit();
+    options.undo.push({
       label,
-      do() {
-        doc = cloneDoc(after);
-        emit();
-      },
       undo() {
         doc = cloneDoc(before);
+        emit();
+      },
+      redo() {
+        doc = cloneDoc(after);
         emit();
       },
     });
@@ -82,7 +84,7 @@ export function createGraphController(options: {
   }
 
   return {
-    bus: options.bus,
+    undo: options.undo,
     getDocument: () => cloneDoc(doc),
     subscribe(listener) {
       listeners.add(listener);
