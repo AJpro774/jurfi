@@ -34,6 +34,8 @@ world.setField(entity, Health, 'hp', 5);
 
 `getVariable` / `setVariable` is a JSON key/value map on the entity. Destroying an entity drops its components and variables, and the next occupant of that slot does not see them.
 
+`setParent(child, parent, { keepWorldTransform: true })` rewrites the child's local `Transform` so its world matrix stays put. `index` is the sibling slot after the child is removed from its old parent (the default is to append). Calling `setParent` with the parent the child already has, and no `index`, leaves the sibling order alone. `childrenOf(parent)` returns that order (`null` lists roots), and `setChildIndex` reorders within the current parent. Indexes outside the list clamp. A parent cycle throws. A zero parent scale throws. If the compensated local matrix is not a position-rotation-scale, that throws too, and the parent link is left unchanged. `toScene()` walks roots and then children in that order, so `loadScene` restores sibling order.
+
 ## World
 
 `createWorld()` returns a `World` with:
@@ -44,6 +46,7 @@ world.setField(entity, Health, 'hp', 5);
 | `add` / `set` / `get` / `has` / `remove` | Components, by type or id |
 | `getField` / `setField` | One schema field |
 | `getVariable` / `setVariable` | Per-entity variables |
+| `childrenOf` / `setChildIndex` | Ordered children and sibling slots |
 | `query` | Entities that have every requested component |
 | `events` | `created`, `destroyed`, `added`, `removed`, `changed` |
 | `time` | `tick(dt)`, `delta`, `elapsed`, `frame`, `scale` |

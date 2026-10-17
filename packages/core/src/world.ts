@@ -2,6 +2,7 @@ import { Transform } from './components';
 import { EntityPool, entityIndex, isEntityId, packEntity, type Entity } from './entity';
 import { EcsError } from './errors';
 import { WorldEventBus, type WorldEventMap, type WorldEventName } from './events';
+import { decomposeTrs, identityMatrix, invertMatrix, multiplyMatrices, type Trs } from './matrix';
 import { buildRenderScene, composeTrs, type RenderInput, type RenderScene } from './render-scene';
 import {
   coerceComponentData,
@@ -56,6 +57,13 @@ export interface WorldPlugin {
 
 export type ComponentRef = ComponentType | string;
 
+export interface SetParentOptions {
+  /** Recompute local Transform so the world matrix stays the same. */
+  keepWorldTransform?: boolean;
+  /** Sibling index under the new parent. Omit to append. */
+  index?: number;
+}
+
 class WorldQuery implements Query {
   constructor(
     private readonly collect: () => Entity[],
@@ -93,7 +101,8 @@ export class World {
   private readonly vars: Array<Map<string, unknown> | undefined> = [];
   private readonly names: string[] = [];
   private readonly parentOf: number[] = [];
-  private readonly children = new Map<number, Set<number>>();
+  private readonly children = new Map<number, number[]>();
+  private roots: number[] = [];
   private readonly aliasOf = new Map<string, number>();
   private readonly aliasByIndex: string[] = [];
   private matrixDirty = new Uint8Array(0);
@@ -109,6 +118,7 @@ export class World {
     const index = entityIndex(entity);
     this.names[index] = '';
     this.parentOf[index] = -1;
+    this.roots.push(index);
     this.markMatrixDirty(index);
     this.events.emit('created', { entity });
     this.touch();
@@ -125,9 +135,10 @@ export class World {
       this.unlink(child);
       if (parent >= 0) {
         this.parentOf[child] = parent;
-        this.link(parent, child);
+        this.insertChild(parent, child);
       } else {
         this.parentOf[child] = -1;
+        this.insertChild(null, child);
       }
       this.markMatrixDirty(child);
     }
@@ -348,27 +359,50 @@ export class World {
     return this.entityAt(parent) ?? null;
   }
 
-  setParent(entity: Entity, parent: Entity | null): void {
+  setParent(entity: Entity, parent: Entity | null, options?: SetParentOptions): void {
     this.assertAlive(entity);
     const index = entityIndex(entity);
-    if (parent === null) {
-      this.unlink(index);
-      this.parentOf[index] = -1;
-      this.markMatrixDirty(index);
-      this.touch();
-      return;
+    const currentParent = this.parentOf[index] ?? -1;
+    let parentIndex = -1;
+    if (parent !== null) {
+      if (!this.pool.isAlive(parent)) {
+        throw new EcsError('dead-entity', `Parent ${parent} is not alive`);
+      }
+      parentIndex = entityIndex(parent);
+      if (parentIndex === index || this.isUnder(parentIndex, index)) {
+        throw new EcsError('cycle', `Parenting entity ${entity} to ${parent} would form a cycle`);
+      }
     }
-    if (!this.pool.isAlive(parent)) {
-      throw new EcsError('dead-entity', `Parent ${parent} is not alive`);
-    }
-    const parentIndex = entityIndex(parent);
-    if (parentIndex === index || this.isUnder(parentIndex, index)) {
-      throw new EcsError('cycle', `Parenting entity ${entity} to ${parent} would form a cycle`);
-    }
+    if (currentParent === parentIndex && options?.index === undefined) return;
+    const kept = options?.keepWorldTransform === true ? this.keptLocal(entity, parent) : undefined;
     this.unlink(index);
     this.parentOf[index] = parentIndex;
-    this.link(parentIndex, index);
+    this.insertChild(parentIndex >= 0 ? parentIndex : null, index, options?.index);
     this.markMatrixDirty(index);
+    if (kept) this.set(entity, Transform, kept);
+    this.touch();
+  }
+
+  /** Ordered children. `null` lists root entities. */
+  childrenOf(parent: Entity | null): Entity[] {
+    this.assertOpen();
+    if (parent !== null) this.assertAlive(parent);
+    const indexes = parent === null ? this.roots : this.children.get(entityIndex(parent)) ?? [];
+    const out: Entity[] = [];
+    for (const index of indexes) {
+      const entity = this.entityAt(index);
+      if (entity !== undefined) out.push(entity);
+    }
+    return out;
+  }
+
+  /** Move `entity` among its current siblings. */
+  setChildIndex(entity: Entity, index: number): void {
+    this.assertAlive(entity);
+    const child = entityIndex(entity);
+    const parent = this.parentOf[child] ?? -1;
+    this.unlink(child);
+    this.insertChild(parent >= 0 ? parent : null, child, index);
     this.touch();
   }
 
@@ -436,23 +470,18 @@ export class World {
 
   toScene(): SceneJson {
     const entities: SceneEntityJson[] = [];
+    const seen = new Set<number>();
+    const visit = (index: number): void => {
+      if (seen.has(index)) return;
+      const entity = this.entityAt(index);
+      if (entity === undefined) return;
+      seen.add(index);
+      entities.push(this.sceneEntity(entity));
+      for (const child of this.children.get(index) ?? []) visit(child);
+    };
+    for (const root of this.roots) visit(root);
     for (const entity of this.pool.alive()) {
-      const components: Record<string, unknown> = {};
-      for (const key of this.componentKeys(entity)) {
-        components[key] = this.get(entity, key);
-      }
-      const variables: Record<string, unknown> = {};
-      const bucket = this.vars[entityIndex(entity)];
-      if (bucket) {
-        for (const [name, value] of bucket) variables[name] = cloneJson(value);
-      }
-      entities.push({
-        id: entity,
-        name: this.getName(entity),
-        parent: this.getParent(entity),
-        components,
-        variables,
-      });
+      if (!seen.has(entityIndex(entity))) entities.push(this.sceneEntity(entity));
     }
     return { version: SCENE_VERSION, entities, generations: this.pool.generationSnapshot() };
   }
@@ -475,6 +504,8 @@ export class World {
       for (const row of scene.entities) {
         const entity = row.id;
         this.names[entityIndex(entity)] = typeof row.name === 'string' ? row.name : '';
+        this.parentOf[entityIndex(entity)] = -1;
+        this.roots.push(entityIndex(entity));
         const components = row.components ?? {};
         if (!isRecord(components)) throw new EcsError('invalid-scene', `Entity ${entity} components must be an object`);
         for (const [key, value] of Object.entries(components)) this.set(entity, key, value);
@@ -564,18 +595,81 @@ export class World {
     this.matrixDirty = next;
   }
 
-  private link(parent: number, child: number): void {
+  private insertChild(parent: number | null, child: number, index?: number): void {
+    const kids = parent === null ? this.roots : this.childList(parent);
+    const at = index === undefined || !Number.isFinite(index) ? kids.length : clampIndex(index, kids.length);
+    kids.splice(at, 0, child);
+  }
+
+  private childList(parent: number): number[] {
     let kids = this.children.get(parent);
     if (!kids) {
-      kids = new Set();
+      kids = [];
       this.children.set(parent, kids);
     }
-    kids.add(child);
+    return kids;
   }
 
   private unlink(index: number): void {
     const parent = this.parentOf[index] ?? -1;
-    if (parent >= 0) this.children.get(parent)?.delete(index);
+    const kids = parent >= 0 ? this.children.get(parent) : this.roots;
+    if (!kids) return;
+    const at = kids.indexOf(index);
+    if (at >= 0) kids.splice(at, 1);
+  }
+
+  private worldMatrix(entity: Entity, seen = new Set<Entity>()): Float32Array {
+    if (seen.has(entity)) throw new EcsError('cycle', `Transform hierarchy contains a cycle at entity ${entity}`);
+    seen.add(entity);
+    const local = this.localMatrix(entity) ?? identityMatrix();
+    const parent = this.getParent(entity);
+    if (parent === null) return local;
+    const combined = new Float32Array(16);
+    multiplyMatrices(this.worldMatrix(parent, seen), 0, local, 0, combined, 0);
+    return combined;
+  }
+
+  /**
+   * Local TRS that keeps `entity`'s current world matrix under `parent`.
+   * Computed before the link changes. Throws when the parent is singular or the
+   * compensated matrix is not a TRS (shear from non-uniform scale plus rotation).
+   */
+  private keptLocal(entity: Entity, parent: Entity | null): Trs {
+    const preserved = this.worldMatrix(entity);
+    const parentWorld = parent === null ? identityMatrix() : this.worldMatrix(parent);
+    const inverse = invertMatrix(parentWorld);
+    if (!inverse) throw new EcsError('invalid-value', 'Parent world transform cannot be inverted');
+    const local = new Float32Array(16);
+    multiplyMatrices(inverse, 0, preserved, 0, local, 0);
+    const trs = decomposeTrs(local);
+    const rebuilt = new Float32Array(16);
+    composeTrs(trs.position, trs.rotation, trs.scale, rebuilt, 0);
+    if (!matricesClose(rebuilt, local)) {
+      throw new EcsError(
+        'invalid-value',
+        'World transform cannot be kept; the local matrix is not a position-rotation-scale',
+      );
+    }
+    return trs;
+  }
+
+  private sceneEntity(entity: Entity): SceneEntityJson {
+    const components: Record<string, unknown> = {};
+    for (const key of this.componentKeys(entity)) {
+      components[key] = this.get(entity, key);
+    }
+    const variables: Record<string, unknown> = {};
+    const bucket = this.vars[entityIndex(entity)];
+    if (bucket) {
+      for (const [name, value] of bucket) variables[name] = cloneJson(value);
+    }
+    return {
+      id: entity,
+      name: this.getName(entity),
+      parent: this.getParent(entity),
+      components,
+      variables,
+    };
   }
 
   /** True when `index` is `ancestor` or sits under it. */
@@ -605,6 +699,7 @@ export class World {
     this.names.length = 0;
     this.parentOf.length = 0;
     this.children.clear();
+    this.roots = [];
     this.aliasOf.clear();
     this.aliasByIndex.length = 0;
     this.matrixDirty = new Uint8Array(0);
@@ -632,6 +727,22 @@ export class World {
   private flush(): void {
     for (const listener of [...this.listeners]) listener();
   }
+}
+
+function matricesClose(left: Float32Array, right: Float32Array): boolean {
+  for (let lane = 0; lane < 16; lane += 1) {
+    const a = left[lane] ?? 0;
+    const b = right[lane] ?? 0;
+    if (Math.abs(a - b) > 1e-4 + 1e-4 * Math.abs(b)) return false;
+  }
+  return true;
+}
+
+function clampIndex(index: number, length: number): number {
+  const floored = Math.floor(index);
+  if (floored < 0) return 0;
+  if (floored > length) return length;
+  return floored;
 }
 
 function componentId(component: ComponentRef): string {
