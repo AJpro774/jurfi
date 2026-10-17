@@ -98,17 +98,15 @@ function inspectorPanel(): PanelDefinition {
       let healthInput: HTMLInputElement | null = null;
       let componentsView: HTMLPreElement | null = null;
 
-      const sync = (force: boolean): void => {
+      const sync = (): void => {
         const id = ctx.selection.get()[0];
         const entity = id ? ctx.world.get(id) : undefined;
         if (!entity) return;
-        if (nameInput && (force || document.activeElement !== nameInput) && nameInput.value !== entity.name) {
-          nameInput.value = entity.name;
-        }
+        if (nameInput && nameInput.value !== entity.name) nameInput.value = entity.name;
         if (healthInput) {
           const health = entity.components.health;
           const text = typeof health === 'number' ? String(health) : '';
-          if ((force || document.activeElement !== healthInput) && healthInput.value !== text) healthInput.value = text;
+          if (healthInput.value !== text) healthInput.value = text;
           if (typeof health === 'number' && health < 0) healthInput.setAttribute('aria-invalid', 'true');
           else healthInput.removeAttribute('aria-invalid');
         }
@@ -200,7 +198,7 @@ function inspectorPanel(): PanelDefinition {
         componentsView.className = 'je-code';
         componentsView.textContent = JSON.stringify(entity.components, null, 2);
         form.append(componentsView);
-        sync(true);
+        sync();
       };
 
       rebuild();
@@ -208,15 +206,11 @@ function inspectorPanel(): PanelDefinition {
       const offWorld = ctx.bus.on('world:changed', () => {
         const id = ctx.selection.get()[0] ?? '';
         if (id !== selected) rebuild();
-        else sync(false);
-      });
-      const offUndo = ctx.undo.subscribe((event) => {
-        if (event === 'undo' || event === 'redo') sync(true);
+        else sync();
       });
       return () => {
         offSelection();
         offWorld();
-        offUndo();
       };
     },
   };
