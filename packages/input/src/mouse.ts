@@ -15,6 +15,10 @@ export class Mouse {
   frameDy = 0;
   frameWheel = 0;
   locked = false;
+  /** Buttons pressed since the last latch() (bitmask). */
+  private pendingButtons = 0;
+  /** Buttons pressed between the previous two latch() calls, even if released since. */
+  latchedButtons = 0;
   /** Absolute position (element-relative px + normalized 0..1). `active` once the mouse has moved over the element. */
   readonly pointer = new PointerState();
   private readonly doc: InputOptions['document'];
@@ -39,7 +43,7 @@ export class Mouse {
     };
   }
 
-  private readonly onDown = (e: MouseEvent): void => { this.buttons |= 1 << e.button; };
+  private readonly onDown = (e: MouseEvent): void => { this.buttons |= 1 << e.button; this.pendingButtons |= 1 << e.button; };
   private readonly onUp = (e: MouseEvent): void => { this.buttons &= ~(1 << e.button); };
   private readonly onMove = (e: MouseEvent): void => {
     this.x = e.clientX; this.y = e.clientY;
@@ -58,6 +62,11 @@ export class Mouse {
     return (this.buttons & (1 << button)) !== 0;
   }
 
+  /** True if the button went down since the previous update, even if already released. */
+  wasPressed(button: number): boolean {
+    return (this.latchedButtons & (1 << button)) !== 0;
+  }
+
   requestPointerLock(): void {
     void this.element?.requestPointerLock?.();
   }
@@ -68,6 +77,7 @@ export class Mouse {
 
   /** Latch accumulated deltas for this frame's polling and reset accumulators. */
   latch(): void {
+    this.latchedButtons = this.pendingButtons; this.pendingButtons = 0;
     this.frameDx = this.dx; this.frameDy = this.dy; this.frameWheel = this.wheel;
     this.dx = 0; this.dy = 0; this.wheel = 0;
   }
