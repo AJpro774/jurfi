@@ -40,7 +40,7 @@ export { Light, Light2D, Transform } from './components';
 export type { WorldEventMap, WorldEventName } from './events';
 export { WorldEventBus } from './events';
 export type { EntitySnapshot, WorldChange, WorldPatch } from './history';
-export type { Query, SceneEntityJson, SceneJson, WorldPlugin, ComponentRef } from './world';
+export type { Query, SceneEntityJson, SceneJson, WorldPlugin, ComponentRef, ComponentChange } from './world';
 export { SCENE_VERSION, World, createWorld, resolveEntityId } from './world';
 
 export type { RenderScene } from './render-scene';

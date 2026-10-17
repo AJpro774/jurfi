@@ -63,6 +63,27 @@ export interface WorldPlugin {
 
 export type ComponentRef = ComponentType | string;
 
+/** One inspector-facing component or parent edit. */
+export interface ComponentChange {
+  readonly entity: Entity;
+  readonly kind: 'add' | 'remove' | 'set' | 'setField' | 'setParent';
+  /** Absent when `kind` is `setParent`. */
+  readonly component?: string;
+  /** Set for `setField`. A whole-component edit leaves this unset. */
+  readonly field?: string;
+  /** New parent when `kind` is `setParent`. */
+  readonly parent?: Entity | null;
+}
+
+type ChangedListener = (change: ComponentChange) => void;
+
+interface ChangedSubscription {
+  entity: Entity;
+  component?: string;
+  field?: string;
+  listener: ChangedListener;
+}
+
 class WorldQuery implements Query {
   constructor(
     private readonly collect: () => Entity[],
@@ -105,6 +126,8 @@ export class World {
   private readonly aliasByIndex: string[] = [];
   private matrixDirty = new Uint8Array(0);
   private readonly listeners = new Set<() => void>();
+  private readonly changedSubs = new Set<ChangedSubscription>();
+  private readonly changedQueue: ComponentChange[] = [];
   private readonly plugins = new Set<string>();
   private readonly history = new ChangeLog();
   private notifyDepth = 0;
@@ -165,6 +188,7 @@ export class World {
       const stored = this.json.get(index, id);
       this.note('add', { op: 'add', entity, component: id, value: stored }, { op: 'remove', entity, component: id });
       this.events.emit('added', { entity, component: id });
+      this.emitChanged({ entity, kind: 'add', component: id });
       this.touch();
       return;
     }
@@ -181,6 +205,7 @@ export class World {
       { op: 'remove', entity, component: model.id },
     );
     this.events.emit('added', { entity, component: model.id });
+    this.emitChanged({ entity, kind: 'add', component: model.id });
     this.touch();
   }
 
@@ -199,6 +224,7 @@ export class World {
       const stored = this.json.get(index, id);
       this.noteComponentWrite(entity, id, existed, previous, stored);
       this.events.emit(existed ? 'changed' : 'added', { entity, component: id });
+      this.emitChanged({ entity, kind: existed ? 'set' : 'add', component: id });
       this.touch();
       return;
     }
@@ -210,6 +236,7 @@ export class World {
     const stored = store.read(index);
     this.noteComponentWrite(entity, model.id, existed, previous, stored);
     this.events.emit(existed ? 'changed' : 'added', { entity, component: model.id });
+    this.emitChanged({ entity, kind: existed ? 'set' : 'add', component: model.id });
     this.touch();
   }
 
@@ -246,6 +273,7 @@ export class World {
       { op: 'add', entity, component: id, value: previous },
     );
     this.events.emit('removed', { entity, component: id });
+    this.emitChanged({ entity, kind: 'remove', component: id });
     this.touch();
   }
 
@@ -288,6 +316,7 @@ export class World {
         : { op: 'remove', entity, component: id };
       this.note(`setField ${id}.${path}`, forward, inverse);
       this.events.emit(existed ? 'changed' : 'added', { entity, component: id, field: path });
+      this.emitChanged({ entity, kind: 'setField', component: id, field: path });
       this.touch();
       return;
     }
@@ -301,6 +330,7 @@ export class World {
     if (model.id === Transform.id) this.markMatrixDirty(index);
     this.noteFieldWrite(entity, model.id, path, existed, previous, checked);
     this.events.emit(existed ? 'changed' : 'added', { entity, component: model.id, field: path });
+    this.emitChanged({ entity, kind: 'setField', component: model.id, field: path });
     this.touch();
   }
 
@@ -412,6 +442,7 @@ export class World {
       this.markMatrixDirty(index);
       if (previous !== null) {
         this.note('setParent', { op: 'setParent', entity, parent: null }, { op: 'setParent', entity, parent: previous });
+        this.emitChanged({ entity, kind: 'setParent', parent: null });
       }
       this.touch();
       return;
@@ -429,6 +460,7 @@ export class World {
     this.markMatrixDirty(index);
     if (previous !== parent) {
       this.note('setParent', { op: 'setParent', entity, parent }, { op: 'setParent', entity, parent: previous });
+      this.emitChanged({ entity, kind: 'setParent', parent });
     }
     this.touch();
   }
@@ -649,6 +681,35 @@ export class World {
     return this.history.onChange(listener);
   }
 
+  /**
+   * Inspector subscription for one entity, one component, or one field.
+   * `setParent` is delivered only to entity listeners (no component filter).
+   * A field listener also hears add, set, and remove of that component.
+   * Inside `batch` and `transaction`, calls wait until the outermost one finishes,
+   * and repeated edits of the same entity, component, field, and kind collapse.
+   */
+  onChanged(entity: Entity, listener: ChangedListener): () => void;
+  onChanged(entity: Entity, component: ComponentRef, listener: ChangedListener): () => void;
+  onChanged(entity: Entity, component: ComponentRef, field: string, listener: ChangedListener): () => void;
+  onChanged(
+    entity: Entity,
+    componentOrListener: ComponentRef | ChangedListener,
+    fieldOrListener?: string | ChangedListener,
+    maybeListener?: ChangedListener,
+  ): () => void {
+    this.assertAlive(entity);
+    const sub: ChangedSubscription = { entity, listener: resolveChangedListener(componentOrListener, fieldOrListener, maybeListener) };
+    if (typeof componentOrListener !== 'function') sub.component = componentId(componentOrListener);
+    if (typeof fieldOrListener === 'string') {
+      if (fieldOrListener.length === 0) throw new EcsError('invalid-value', 'onChanged field must be a non-empty string');
+      sub.field = fieldOrListener;
+    }
+    this.changedSubs.add(sub);
+    return () => {
+      this.changedSubs.delete(sub);
+    };
+  }
+
   on<K extends WorldEventName>(type: K, listener: (event: WorldEventMap[K]) => void): () => void {
     return this.events.on(type, listener);
   }
@@ -658,6 +719,8 @@ export class World {
     this.history.clear();
     this.resetStorage();
     this.listeners.clear();
+    this.changedSubs.clear();
+    this.changedQueue.length = 0;
     this.disposed = true;
   }
 
@@ -940,8 +1003,55 @@ export class World {
   }
 
   private flush(): void {
+    this.dispatchChanged();
     for (const listener of [...this.listeners]) listener();
   }
+
+  private emitChanged(change: ComponentChange): void {
+    if (this.notifyDepth > 0) {
+      const key = changeKey(change);
+      const existing = this.changedQueue.findIndex((item) => changeKey(item) === key);
+      if (existing >= 0) this.changedQueue[existing] = change;
+      else this.changedQueue.push(change);
+      return;
+    }
+    this.dispatchChanged([change]);
+  }
+
+  private dispatchChanged(pending?: ComponentChange[]): void {
+    const batch = pending ?? this.changedQueue.splice(0);
+    if (batch.length === 0) return;
+    const subs = [...this.changedSubs];
+    for (const change of batch) {
+      for (const sub of subs) {
+        if (!this.changedSubs.has(sub) || !changeMatches(sub, change)) continue;
+        sub.listener(change);
+      }
+    }
+  }
+}
+
+function resolveChangedListener(
+  componentOrListener: ComponentRef | ChangedListener,
+  fieldOrListener: string | ChangedListener | undefined,
+  maybeListener: ChangedListener | undefined,
+): ChangedListener {
+  if (typeof componentOrListener === 'function') return componentOrListener;
+  if (typeof fieldOrListener === 'function') return fieldOrListener;
+  if (maybeListener) return maybeListener;
+  throw new EcsError('invalid-value', 'onChanged requires a listener');
+}
+
+function changeMatches(sub: ChangedSubscription, change: ComponentChange): boolean {
+  if (sub.entity !== change.entity) return false;
+  if (sub.component === undefined) return true;
+  if (change.component !== sub.component) return false;
+  if (sub.field === undefined) return true;
+  return change.field === undefined || change.field === sub.field;
+}
+
+function changeKey(change: ComponentChange): string {
+  return `${change.entity}\0${change.kind}\0${change.component ?? ''}\0${change.field ?? ''}`;
 }
 
 function componentId(component: ComponentRef): string {
