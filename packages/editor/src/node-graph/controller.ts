@@ -1,8 +1,9 @@
-import type { GraphDocument, GraphEndpoint, GraphRect, Vec2 } from '@jurfi/script';
+import type { GraphDoc, GraphPoint, PinEndpoint } from '@jurfi/script';
+import type { NodeRegistry } from '@jurfi/script';
 import type { UndoStack } from '../undo';
 import { extractClipboard, pasteClipboard } from './clipboard';
 import type { GraphClipboard } from './clipboard';
-import type { NodeRegistry } from './registry';
+import { rectFields, type GraphRect } from './geometry';
 import { evaluateConnection } from './validate';
 
 export interface IdFactory {
@@ -20,23 +21,26 @@ export function createIdFactory(start = 1): IdFactory {
 
 export interface GraphController {
   readonly undo: UndoStack;
-  getDocument(): GraphDocument;
+  readonly registry: NodeRegistry;
+  getDocument(): GraphDoc;
   subscribe(listener: () => void): () => void;
-  addNode(type: string, pos: Vec2): string | null;
+  addNode(type: string, pos: GraphPoint): string | null;
   remove(selection: { nodes: readonly string[]; comments: readonly string[]; groups: readonly string[]; edge: GraphEndpointPair | null }): void;
-  moveNodes(positions: Readonly<Record<string, Vec2>>): void;
+  moveNodes(positions: Readonly<Record<string, GraphPoint>>): void;
   moveComments(rects: Readonly<Record<string, GraphRect>>): void;
-  moveGroups(rects: Readonly<Record<string, GraphRect>>, positions: Readonly<Record<string, Vec2>>): void;
-  connect(a: GraphEndpoint, b: GraphEndpoint): string | null;
+  moveGroups(rects: Readonly<Record<string, GraphRect>>, positions: Readonly<Record<string, GraphPoint>>): void;
+  connect(a: PinEndpoint, b: PinEndpoint): string | null;
   disconnect(edge: GraphEndpointPair): void;
   setProp(nodeId: string, key: string, value: unknown): void;
+  /** Write a literal onto an input pin (`node.pins`). */
+  setPin(nodeId: string, pin: string, value: unknown): void;
   addComment(rect: GraphRect, text?: string): string | null;
   setCommentText(id: string, text: string): void;
   addGroup(nodeIds: readonly string[], rect: GraphRect, title?: string): string | null;
   setGroupTitle(id: string, title: string): void;
   copy(selection: { nodes: readonly string[]; comments: readonly string[]; groups: readonly string[] }): GraphClipboard;
-  paste(clipboard: GraphClipboard, offset: Vec2): { nodes: string[]; comments: string[]; groups: string[] } | null;
-  replaceDocument(document: GraphDocument): void;
+  paste(clipboard: GraphClipboard, offset: GraphPoint): { nodes: string[]; comments: string[]; groups: string[] } | null;
+  replaceDocument(document: GraphDoc): void;
 }
 
 export interface GraphEndpointPair {
@@ -47,20 +51,20 @@ export interface GraphEndpointPair {
 }
 
 export function createGraphController(options: {
-  document: GraphDocument;
+  document: GraphDoc;
   registry: NodeRegistry;
   undo: UndoStack;
   ids?: IdFactory;
   readOnly?: boolean;
 }): GraphController {
-  let doc = cloneDoc(options.document);
+  let doc = normalizeDoc(options.document);
   const listeners = new Set<() => void>();
   const ids = options.ids ?? createIdFactory();
   const emit = () => {
     for (const listener of listeners) listener();
   };
 
-  function commit(label: string, mutate: (draft: GraphDocument) => void): boolean {
+  function commit(label: string, mutate: (draft: GraphDoc) => void): boolean {
     if (options.readOnly) return false;
     const before = cloneDoc(doc);
     const draft = cloneDoc(doc);
@@ -85,6 +89,7 @@ export function createGraphController(options: {
 
   return {
     undo: options.undo,
+    registry: options.registry,
     getDocument: () => cloneDoc(doc),
     subscribe(listener) {
       listeners.add(listener);
@@ -100,8 +105,7 @@ export function createGraphController(options: {
         draft.nodes.push({
           id,
           type,
-          pins: structuredClone(definition.pins) as GraphDocument['nodes'][number]['pins'],
-          props: structuredClone(definition.defaults ?? {}) as Record<string, unknown>,
+          props: {},
           pos: { x: pos.x, y: pos.y },
         });
       });
@@ -117,9 +121,11 @@ export function createGraphController(options: {
         }
         draft.edges = draft.edges.filter((edge) => !nodes.has(edge.from.node) && !nodes.has(edge.to.node));
         draft.nodes = draft.nodes.filter((node) => !nodes.has(node.id));
-        draft.comments = draft.comments.filter((comment) => !comments.has(comment.id));
-        draft.groups = draft.groups.filter((group) => !groups.has(group.id));
-        for (const group of draft.groups) group.nodeIds = group.nodeIds.filter((id) => !nodes.has(id));
+        draft.comments = (draft.comments ?? []).filter((comment) => !comments.has(comment.id));
+        draft.groups = (draft.groups ?? []).filter((group) => !groups.has(group.id));
+        for (const group of draft.groups) {
+          group.nodeIds = (group.nodeIds ?? []).filter((id) => !nodes.has(id));
+        }
       });
     },
     moveNodes(positions) {
@@ -132,17 +138,23 @@ export function createGraphController(options: {
     },
     moveComments(rects) {
       commit('Move comment', (draft) => {
-        for (const comment of draft.comments) {
+        for (const comment of draft.comments ?? []) {
           const next = rects[comment.id];
-          if (next) comment.rect = { ...next };
+          if (!next) continue;
+          const laid = rectFields(next);
+          comment.pos = laid.pos;
+          comment.size = laid.size;
         }
       });
     },
     moveGroups(rects, positions) {
       commit('Move group', (draft) => {
-        for (const group of draft.groups) {
+        for (const group of draft.groups ?? []) {
           const next = rects[group.id];
-          if (next) group.rect = { ...next };
+          if (!next) continue;
+          const laid = rectFields(next);
+          group.pos = laid.pos;
+          group.size = laid.size;
         }
         for (const node of draft.nodes) {
           const next = positions[node.id];
@@ -151,7 +163,7 @@ export function createGraphController(options: {
       });
     },
     connect(a, b) {
-      const result = evaluateConnection(doc, a, b);
+      const result = evaluateConnection(doc, options.registry, a, b);
       if (!result.ok) return result.message;
       const edge = result.edge;
       const edgeId = ids('edge');
@@ -172,29 +184,40 @@ export function createGraphController(options: {
         node.props = { ...node.props, [key]: value };
       });
     },
+    setPin(nodeId, pin, value) {
+      commit('Edit pin', (draft) => {
+        const node = draft.nodes.find((item) => item.id === nodeId);
+        if (!node) return;
+        node.pins = { ...node.pins, [pin]: value };
+      });
+    },
     addComment(rect, text = 'Comment') {
       const id = ids('comment');
+      const laid = rectFields(rect);
       const ok = commit('Add comment', (draft) => {
-        draft.comments.push({ id, text, rect: { ...rect } });
+        draft.comments = draft.comments ?? [];
+        draft.comments.push({ id, text, pos: laid.pos, size: laid.size });
       });
       return ok ? id : null;
     },
     setCommentText(id, text) {
       commit('Edit comment', (draft) => {
-        const comment = draft.comments.find((item) => item.id === id);
+        const comment = draft.comments?.find((item) => item.id === id);
         if (comment) comment.text = text;
       });
     },
     addGroup(nodeIds, rect, title = 'Group') {
       const id = ids('group');
+      const laid = rectFields(rect);
       const ok = commit('Add group', (draft) => {
-        draft.groups.push({ id, title, nodeIds: [...nodeIds], rect: { ...rect } });
+        draft.groups = draft.groups ?? [];
+        draft.groups.push({ id, title, nodeIds: [...nodeIds], pos: laid.pos, size: laid.size });
       });
       return ok ? id : null;
     },
     setGroupTitle(id, title) {
       commit('Rename group', (draft) => {
-        const group = draft.groups.find((item) => item.id === id);
+        const group = draft.groups?.find((item) => item.id === id);
         if (group) group.title = title;
       });
     },
@@ -210,18 +233,19 @@ export function createGraphController(options: {
     },
     replaceDocument(document) {
       commit('Set graph', (draft) => {
-        const next = cloneDoc(document);
+        const next = normalizeDoc(document);
         draft.version = next.version;
         draft.nodes = next.nodes;
         draft.edges = next.edges;
         draft.groups = next.groups;
         draft.comments = next.comments;
+        draft.subgraphs = next.subgraphs;
       });
     },
   };
 }
 
-function samePair(edge: GraphDocument['edges'][number], pair: GraphEndpointPair): boolean {
+function samePair(edge: GraphDoc['edges'][number], pair: GraphEndpointPair): boolean {
   return (
     edge.from.node === pair.fromNode &&
     edge.from.pin === pair.fromPin &&
@@ -230,6 +254,13 @@ function samePair(edge: GraphDocument['edges'][number], pair: GraphEndpointPair)
   );
 }
 
-function cloneDoc(document: GraphDocument): GraphDocument {
+export function normalizeDoc(document: GraphDoc): GraphDoc {
+  const next = cloneDoc(document);
+  next.groups = next.groups ?? [];
+  next.comments = next.comments ?? [];
+  return next;
+}
+
+function cloneDoc(document: GraphDoc): GraphDoc {
   return structuredClone(document);
 }

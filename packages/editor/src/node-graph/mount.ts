@@ -1,11 +1,10 @@
-import type { GraphDocument } from '@jurfi/script';
+import { createScriptRuntime, type DebugSource, type GraphDoc } from '@jurfi/script';
 import type { EditorContext } from '../context';
 import { PANEL } from '../layout';
 import { registerPanel } from '../registry';
 import { createUndoStack, type UndoStack } from '../undo';
 import { identityGraphAdapter, type GraphDocAdapter } from './adapter';
 import { createGraphController, type GraphController } from './controller';
-import { edgeWireId, type DebugEvent, type DebugSource } from './debug';
 import { createDemoGraph } from './demo-document';
 import type { NodeRegistry } from './registry';
 import { createDefaultRegistry } from './registry';
@@ -15,11 +14,11 @@ import { NodeGraphView } from './view';
 /** Last committed graph. Separate from the shell project file, which stores the world. */
 export const GRAPH_AUTOSAVE_KEY = 'jurfi.editor.nodegraph';
 
-export interface NodeGraphOptions<TDoc = GraphDocument> {
+export interface NodeGraphOptions<TDoc = GraphDoc> {
   /** Node types for this domain. Defaults to the script `core/*` catalog. */
   registry?: NodeRegistry;
   /**
-   * Host-document boundary. Omit it when `doc` is already a `GraphDocument`.
+   * Host-document boundary. Omit it when `doc` is already a `GraphDoc`.
    * `fromGraph` must return JSON-serializable data.
    */
   adapter?: GraphDocAdapter<TDoc>;
@@ -29,7 +28,7 @@ export interface NodeGraphOptions<TDoc = GraphDocument> {
   onChange?: (document: TDoc) => void;
 }
 
-export interface NodeGraphHandle<TDoc = GraphDocument> {
+export interface NodeGraphHandle<TDoc = GraphDoc> {
   destroy(): void;
   getDocument(): TDoc;
   setDocument(document: TDoc): void;
@@ -43,7 +42,7 @@ export interface NodeGraphHandle<TDoc = GraphDocument> {
   redo(): void;
 }
 
-export function mountNodeGraph<TDoc = GraphDocument>(
+export function mountNodeGraph<TDoc = GraphDoc>(
   el: HTMLElement,
   doc: TDoc,
   opts: NodeGraphOptions<TDoc> = {},
@@ -57,7 +56,7 @@ export function mountNodeGraph<TDoc = GraphDocument>(
     undo,
     readOnly: opts.readOnly,
   });
-  const emit = (graph: GraphDocument): void => {
+  const emit = (graph: GraphDoc): void => {
     opts.onChange?.(adapter.fromGraph(graph));
   };
   const view = new NodeGraphView(el, controller, registry, emit);
@@ -83,7 +82,7 @@ interface GraphSession {
 
 let session: GraphSession | null = null;
 
-function readGraphAutosave(): GraphDocument | null {
+function readGraphAutosave(): GraphDoc | null {
   try {
     if (typeof localStorage === 'undefined') return null;
     const raw = localStorage.getItem(GRAPH_AUTOSAVE_KEY);
@@ -94,7 +93,7 @@ function readGraphAutosave(): GraphDocument | null {
   }
 }
 
-function writeGraphAutosave(doc: GraphDocument): void {
+function writeGraphAutosave(doc: GraphDoc): void {
   try {
     if (typeof localStorage === 'undefined') return;
     localStorage.setItem(GRAPH_AUTOSAVE_KEY, serializeGraph(doc));
@@ -135,66 +134,51 @@ function controllerFor(ctx: EditorContext, registry: NodeRegistry): GraphControl
 
 function attachPlayDebug(ctx: EditorContext, view: NodeGraphView): () => void {
   let timer = 0;
-  let step = 0;
-  let activeNode = '';
-  const listeners = new Set<(event: DebugEvent) => void>();
   const source: DebugSource = {
-    subscribe(listener) {
-      listeners.add(listener);
-      return () => {
-        listeners.delete(listener);
-      };
+    onEvent(event) {
+      view.onEvent(event);
     },
   };
-
-  const emit = (event: DebugEvent): void => {
-    for (const listener of listeners) listener(event);
-  };
-
-  const publish = (): void => {
-    const doc = session?.controller.getDocument();
-    if (!doc) return;
-    const ids = doc.nodes.map((node) => node.id);
-    const current = ids.length === 0 ? '' : (ids[step % ids.length] ?? '');
-    step += 1;
-    if (activeNode) emit({ kind: 'node', nodeId: activeNode, phase: 'exit' });
-    activeNode = current;
-    if (current) emit({ kind: 'node', nodeId: current, phase: 'enter' });
-    for (const edge of doc.edges) {
-      const node = doc.nodes.find((item) => item.id === edge.from.node);
-      const pin = node?.pins.find((item) => item.id === edge.from.pin);
-      if (pin?.kind !== 'data') continue;
-      emit({
-        kind: 'wire',
-        wireId: edgeWireId(edge),
-        value: node?.props.value ?? node?.props.name ?? pin.dataType,
-      });
-    }
-  };
+  const runtime = createScriptRuntime({ registry: view.registry });
 
   const stop = (): void => {
     window.clearInterval(timer);
     timer = 0;
-    activeNode = '';
-    view.setDebugSource(null);
+    runtime.detachDebugger();
+    runtime.stop();
+    view.clearDebug();
+  };
+
+  const start = (): void => {
+    if (timer !== 0) return;
+    const doc = session?.controller.getDocument();
+    if (!doc) return;
+    runtime.attachDebugger(source);
+    const loaded = runtime.load(doc);
+    if (!loaded.ok) {
+      ctx.bus.emit('status', { level: 'warn', message: loaded.diagnostics[0]?.message ?? 'Graph did not compile' });
+      runtime.detachDebugger();
+      return;
+    }
+    runtime.start();
+    timer = window.setInterval(() => runtime.tick(1 / 60), 200);
   };
 
   const sync = (): void => {
-    if (ctx.getPlayState() === 'playing') {
-      if (timer !== 0) return;
-      view.setDebugSource(source);
-      publish();
-      timer = window.setInterval(publish, 700);
-      return;
-    }
-    stop();
+    if (ctx.getPlayState() === 'playing') start();
+    else stop();
   };
 
   const offPlay = ctx.bus.on('play:changed', sync);
   const offStep = ctx.bus.on('play:step', () => {
-    if (ctx.getPlayState() === 'playing') return;
-    view.setDebugSource(source);
-    publish();
+    const doc = session?.controller.getDocument();
+    if (!doc) return;
+    runtime.attachDebugger(source);
+    if (!runtime.running) {
+      const loaded = runtime.load(doc);
+      if (loaded.ok) runtime.start();
+    }
+    runtime.step();
   });
   sync();
   return () => {

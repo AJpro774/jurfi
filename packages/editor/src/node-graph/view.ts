@@ -1,12 +1,25 @@
 import { clamp } from '@jurfi/core';
-import type { GraphDocument, GraphEndpoint, GraphNode, GraphRect, PinDirection, Vec2 } from '@jurfi/script';
+import type { DebugEvent, DebugSource, GraphDoc, GraphNode, NodeRegistry, PinEndpoint, PinSpec } from '@jurfi/script';
 import type { GraphClipboard } from './clipboard';
 import type { GraphController } from './controller';
 import { applyDebugEvent, createDebugOverlay, edgeWireId, formatDebugValue } from './debug';
-import type { DebugOverlay, DebugSource } from './debug';
-import { LAYOUT, nodePos, nodeRect, normalizeRect, padRect, pinAnchor, unionRects, wireGeometry } from './geometry';
-import { nodeTitle, searchNodes } from './registry';
-import type { NodeDefinition, NodeRegistry } from './registry';
+import type { DebugOverlay } from './debug';
+import {
+  commentRect as layoutComment,
+  groupRect as layoutGroup,
+  LAYOUT,
+  nodePos,
+  nodeRect,
+  normalizeRect,
+  padRect,
+  pinAnchor,
+  unionRects,
+  wireGeometry,
+  type GraphRect,
+  type Vec2,
+} from './geometry';
+import { nodeFields, nodePins, nodeTitle, searchNodes } from './registry';
+import type { NodeDef } from './registry';
 import { emptySelection, idsTouchingRect, mergeIds, toggleMember } from './selection';
 import type { GraphSelection } from './selection';
 import { evaluateConnection } from './validate';
@@ -17,11 +30,14 @@ const STYLE_ID = 'jurfi-node-graph-styles';
 const HINT = 'Wheel zoom · Alt-drag pan · Drag empty to box-select · Shift-click multi-select · ⌘/Ctrl+C/V copy';
 
 const CATEGORY_COLOR: Record<string, string> = {
-  Event: 'var(--accent)',
-  Flow: 'var(--text-2)',
-  Data: 'var(--ref-yellow-400)',
-  Math: 'var(--ref-accent-200)',
-  Action: 'var(--danger)',
+  event: 'var(--accent)',
+  flow: 'var(--text-2)',
+  variable: 'var(--ref-yellow-400)',
+  math: 'var(--ref-accent-200)',
+  logic: 'var(--danger)',
+  compare: 'var(--ref-accent-300)',
+  entity: 'var(--text-2)',
+  graph: 'var(--border-strong)',
 };
 
 type Drag =
@@ -32,7 +48,7 @@ type Drag =
   | { kind: 'comment'; pointerId: number; id: string; origin: Vec2; rect: GraphRect }
   | { kind: 'group'; pointerId: number; id: string; origin: Vec2; rect: GraphRect; nodes: Map<string, Vec2> }
   | { kind: 'resize'; pointerId: number; id: string; origin: Vec2; rect: GraphRect }
-  | { kind: 'wire'; pointerId: number; origin: GraphEndpoint; dir: PinDirection; x: number; y: number }
+  | { kind: 'wire'; pointerId: number; origin: PinEndpoint; dir: PinSpec['direction']; x: number; y: number }
   | { kind: 'palette'; pointerId: number; type: string; title: string; x: number; y: number; moved: boolean };
 
 export function ensureNodeGraphStyles(doc: Document): void {
@@ -43,7 +59,7 @@ export function ensureNodeGraphStyles(doc: Document): void {
   doc.head.append(style);
 }
 
-export class NodeGraphView {
+export class NodeGraphView implements DebugSource {
   readonly root: HTMLElement;
   private readonly stage: HTMLElement;
   private readonly world: HTMLElement;
@@ -58,9 +74,9 @@ export class NodeGraphView {
   private readonly redoButton: HTMLButtonElement;
   private readonly ghost: HTMLElement;
   private readonly controller: GraphController;
-  private readonly registry: NodeRegistry;
-  private readonly notify?: (document: GraphDocument) => void;
-  private doc: GraphDocument;
+  readonly registry: NodeRegistry;
+  private readonly notify?: (document: GraphDoc) => void;
+  private doc: GraphDoc;
   private selection: GraphSelection = emptySelection();
   private drag: Drag = { kind: 'none' };
   private previewPos: Map<string, Vec2> | null = null;
@@ -74,7 +90,7 @@ export class NodeGraphView {
   private pasteSerial = 0;
   private clipboard: GraphClipboard | null = null;
   private readonly debug: DebugOverlay = createDebugOverlay();
-  private debugUnsub: (() => void) | null = null;
+  private extraDebug: DebugSource | null = null;
   private readonly stopDoc: () => void;
   private readonly stopBus: () => void;
   private readonly resizeObserver: ResizeObserver;
@@ -84,7 +100,7 @@ export class NodeGraphView {
     host: HTMLElement,
     controller: GraphController,
     registry: NodeRegistry,
-    onChange?: (document: GraphDocument) => void,
+    onChange?: (document: GraphDoc) => void,
   ) {
     this.controller = controller;
     this.registry = registry;
@@ -191,21 +207,20 @@ export class NodeGraphView {
   destroy(): void {
     window.clearTimeout(this.statusTimer);
     this.resizeObserver.disconnect();
-    this.debugUnsub?.();
     this.stopDoc();
     this.stopBus();
     this.root.remove();
   }
 
-  getDocument(): GraphDocument {
+  getDocument(): GraphDoc {
     return this.controller.getDocument();
   }
 
-  setDocument(document: GraphDocument): void {
+  setDocument(document: GraphDoc): void {
     this.controller.replaceDocument(document);
   }
 
-  onChange(listener: (document: GraphDocument) => void): () => void {
+  onChange(listener: (document: GraphDoc) => void): () => void {
     return this.controller.subscribe(() => listener(this.controller.getDocument()));
   }
 
@@ -213,8 +228,8 @@ export class NodeGraphView {
     const wanted = new Set(ids);
     this.selection = {
       nodes: this.doc.nodes.filter((node) => wanted.has(node.id)).map((node) => node.id),
-      comments: this.doc.comments.filter((comment) => wanted.has(comment.id)).map((comment) => comment.id),
-      groups: this.doc.groups.filter((group) => wanted.has(group.id)).map((group) => group.id),
+      comments: this.comments().filter((comment) => wanted.has(comment.id)).map((comment) => comment.id),
+      groups: this.groups().filter((group) => wanted.has(group.id)).map((group) => group.id),
       edge: null,
     };
     this.render();
@@ -232,15 +247,15 @@ export class NodeGraphView {
     const rects: GraphRect[] = [];
     for (const node of this.doc.nodes) {
       if (!includeId(node.id, wanted, selected, this.selection.nodes)) continue;
-      rects.push(nodeRect(this.positioned(node), this.fieldCount(node.type)));
+      rects.push(this.nodeBox(node));
     }
-    for (const comment of this.doc.comments) {
+    for (const comment of this.comments()) {
       if (!includeId(comment.id, wanted, selected, this.selection.comments)) continue;
-      rects.push(this.commentRect(comment.id, comment.rect));
+      rects.push(this.commentBox(comment.id));
     }
-    for (const group of this.doc.groups) {
+    for (const group of this.groups()) {
       if (!includeId(group.id, wanted, selected, this.selection.groups)) continue;
-      rects.push(this.groupRect(group.id, group.rect));
+      rects.push(this.groupBox(group.id));
     }
     const bounds = unionRects(rects);
     const width = this.stage.clientWidth;
@@ -254,17 +269,27 @@ export class NodeGraphView {
     this.syncMinimap();
   }
 
-  setDebugSource(source: DebugSource | null): void {
-    this.debugUnsub?.();
-    this.debugUnsub = null;
+  /** Canvas debugger. The script runtime calls this through `attachDebugger`. */
+  onEvent(event: DebugEvent): void {
+    applyDebugEvent(this.debug, event);
+    this.extraDebug?.onEvent(event);
+    this.syncFrame();
+  }
+
+  clearDebug(): void {
     this.debug.executing.clear();
     this.debug.values.clear();
-    if (source) {
-      this.debugUnsub = source.subscribe((event) => {
-        applyDebugEvent(this.debug, event);
-        this.syncFrame();
-      });
-    }
+    this.syncFrame();
+  }
+
+  /**
+   * Optional extra listener. `null` clears the overlay.
+   * Feed events with `onEvent`; this view is the `DebugSource`.
+   */
+  setDebugSource(source: DebugSource | null): void {
+    this.extraDebug = source;
+    this.debug.executing.clear();
+    this.debug.values.clear();
     this.syncFrame();
   }
 
@@ -286,7 +311,7 @@ export class NodeGraphView {
   private renderPalette(): void {
     const doc = this.root.ownerDocument;
     const matches = searchNodes(this.registry, this.searchInput.value);
-    const groups = new Map<string, NodeDefinition[]>();
+    const groups = new Map<string, NodeDef[]>();
     for (const definition of matches) {
       const list = groups.get(definition.category) ?? [];
       list.push(definition);
@@ -318,9 +343,9 @@ export class NodeGraphView {
   private renderWorld(): void {
     const doc = this.root.ownerDocument;
     const fragment = doc.createDocumentFragment();
-    for (const group of this.doc.groups) fragment.append(this.renderGroup(doc, group.id, group.title, this.groupRect(group.id, group.rect)));
-    for (const comment of this.doc.comments) {
-      fragment.append(this.renderComment(doc, comment.id, comment.text, this.commentRect(comment.id, comment.rect)));
+    for (const group of this.groups()) fragment.append(this.renderGroup(doc, group.id, group.title ?? '', this.groupBox(group.id)));
+    for (const comment of this.comments()) {
+      fragment.append(this.renderComment(doc, comment.id, comment.text ?? '', this.commentBox(comment.id)));
     }
     const svg = doc.createElementNS(SVG_NS, 'svg');
     svg.setAttribute('class', 'ng-wires');
@@ -366,13 +391,15 @@ export class NodeGraphView {
     el.title = definition?.doc ?? title;
     if (this.selection.nodes.includes(node.id)) el.classList.add('is-selected');
     const positioned = this.positioned(node);
-    const rect = nodeRect(positioned, definition?.fields?.length ?? 0);
+    const pins = nodePins(positioned, this.registry);
+    const fields = nodeFields(definition);
+    const rect = nodeRect(positioned, pins, fields.length);
     el.style.transform = `translate(${positioned.pos.x}px, ${positioned.pos.y}px)`;
     el.style.minHeight = `${rect.h}px`;
     el.append(h(doc, 'header', 'ng-node-title', title));
 
-    const inputs = node.pins.filter((pin) => pin.direction === 'in');
-    const outputs = node.pins.filter((pin) => pin.direction === 'out');
+    const inputs = pins.filter((pin) => pin.direction === 'in');
+    const outputs = pins.filter((pin) => pin.direction === 'out');
     const rows = Math.max(inputs.length, outputs.length, 1);
     for (let index = 0; index < rows; index += 1) {
       const row = h(doc, 'div', 'ng-pin-row');
@@ -380,12 +407,12 @@ export class NodeGraphView {
       const input = inputs[index];
       const output = outputs[index];
       if (input) row.append(this.renderPin(doc, node.id, input));
-      if (input) row.append(h(doc, 'span', 'ng-pin-label', input.name));
+      if (input) row.append(h(doc, 'span', 'ng-pin-label', input.label ?? input.name));
       const label = row.lastElementChild;
       if (label instanceof HTMLElement && input) label.dataset.direction = 'in';
       row.append(h(doc, 'span', 'ng-pin-gap'));
       if (output) {
-        const name = h(doc, 'span', 'ng-pin-label', output.name);
+        const name = h(doc, 'span', 'ng-pin-label', output.label ?? output.name);
         name.dataset.direction = 'out';
         row.append(name, this.renderPin(doc, node.id, output));
       }
@@ -395,9 +422,9 @@ export class NodeGraphView {
     pinSpace.style.height = `${rows * LAYOUT.row}px`;
     el.append(pinSpace);
 
-    const fields = definition?.fields ?? [];
     if (fields.length > 0) {
       const box = h(doc, 'div', 'ng-fields');
+      const props = node.props ?? {};
       for (const field of fields) {
         const line = h(doc, 'label', 'ng-field');
         line.append(h(doc, 'span', 'ng-field-label', field.label));
@@ -408,10 +435,10 @@ export class NodeGraphView {
         input.setAttribute('aria-label', `${title} ${field.label}`);
         if (field.kind === 'boolean') {
           input.type = 'checkbox';
-          input.checked = node.props[field.key] === true;
+          input.checked = props[field.key] === true;
         } else {
           input.type = field.kind === 'number' ? 'number' : 'text';
-          const value = node.props[field.key];
+          const value = props[field.key];
           input.value = value == null ? '' : String(value);
           input.spellcheck = false;
         }
@@ -423,15 +450,16 @@ export class NodeGraphView {
     return el;
   }
 
-  private renderPin(doc: Document, nodeId: string, pin: GraphNode['pins'][number]): HTMLButtonElement {
+  private renderPin(doc: Document, nodeId: string, pin: PinSpec): HTMLButtonElement {
     const buttonEl = button(doc, '');
     buttonEl.className = 'ng-pin';
     buttonEl.dataset.pinNode = nodeId;
-    buttonEl.dataset.pinId = pin.id;
+    buttonEl.dataset.pinId = pin.name;
     buttonEl.dataset.kind = pin.kind;
     buttonEl.dataset.direction = pin.direction;
     buttonEl.dataset.type = pin.kind === 'exec' ? 'exec' : (pin.dataType ?? 'any');
-    buttonEl.setAttribute('aria-label', `${pin.name || pin.id} ${pin.kind} ${pin.direction}`);
+    const label = pin.label ?? pin.name;
+    buttonEl.setAttribute('aria-label', `${label} ${pin.kind} ${pin.direction}`);
     return buttonEl;
   }
 
@@ -444,14 +472,14 @@ export class NodeGraphView {
       el.classList.toggle('is-executing', this.debug.executing.has(node.id));
     }
     for (const el of this.world.querySelectorAll<HTMLElement>('.ng-comment')) {
-      const comment = this.doc.comments.find((item) => item.id === el.dataset.id);
+      const comment = this.comments().find((item) => item.id === el.dataset.id);
       if (!comment) continue;
-      placeRect(el, this.commentRect(comment.id, comment.rect));
+      placeRect(el, this.commentBox(comment.id));
     }
     for (const el of this.world.querySelectorAll<HTMLElement>('.ng-group')) {
-      const group = this.doc.groups.find((item) => item.id === el.dataset.id);
+      const group = this.groups().find((item) => item.id === el.dataset.id);
       if (!group) continue;
-      placeRect(el, this.groupRect(group.id, group.rect));
+      placeRect(el, this.groupBox(group.id));
     }
     this.drawWires();
     this.markCompatiblePins();
@@ -470,7 +498,7 @@ export class NodeGraphView {
     for (const edge of this.doc.edges) {
       const ends = this.edgeEnds(edge.from.node, edge.from.pin, edge.to.node, edge.to.pin);
       if (!ends) continue;
-      const source = this.doc.nodes.find((node) => node.id === edge.from.node)?.pins.find((pin) => pin.id === edge.from.pin);
+      const source = this.pinSpec(edge.from);
       const wire = wireGeometry(ends.from, ends.to, 'out');
       const hit = doc.createElementNS(SVG_NS, 'path');
       hit.setAttribute('class', 'ng-wire-hit');
@@ -502,7 +530,7 @@ export class NodeGraphView {
       }
     }
     if (this.drag.kind === 'wire') {
-      const origin = pinAnchor(this.nodeById(this.drag.origin.node), this.drag.origin.pin);
+      const origin = this.anchor(this.drag.origin);
       if (origin) {
         const wire = wireGeometry(origin, { x: this.drag.x, y: this.drag.y }, this.drag.dir);
         const path = doc.createElementNS(SVG_NS, 'path');
@@ -518,16 +546,16 @@ export class NodeGraphView {
   private syncMinimap(): void {
     const doc = this.root.ownerDocument;
     const rects: GraphRect[] = [];
-    for (const node of this.doc.nodes) rects.push(nodeRect(this.positioned(node), this.fieldCount(node.type)));
-    for (const comment of this.doc.comments) rects.push(this.commentRect(comment.id, comment.rect));
-    for (const group of this.doc.groups) rects.push(this.groupRect(group.id, group.rect));
+    for (const node of this.doc.nodes) rects.push(this.nodeBox(node));
+    for (const comment of this.comments()) rects.push(this.commentBox(comment.id));
+    for (const group of this.groups()) rects.push(this.groupBox(group.id));
     const bounds = padRect(unionRects(rects) ?? { x: 0, y: 0, w: 800, h: 480 }, 80);
     this.minimap.setAttribute('viewBox', `${bounds.x} ${bounds.y} ${bounds.w} ${bounds.h}`);
     this.minimap.replaceChildren();
-    for (const group of this.doc.groups) this.minimap.append(this.mapRect(doc, this.groupRect(group.id, group.rect), 'ng-mm-group'));
-    for (const comment of this.doc.comments) this.minimap.append(this.mapRect(doc, this.commentRect(comment.id, comment.rect), 'ng-mm-comment'));
+    for (const group of this.groups()) this.minimap.append(this.mapRect(doc, this.groupBox(group.id), 'ng-mm-group'));
+    for (const comment of this.comments()) this.minimap.append(this.mapRect(doc, this.commentBox(comment.id), 'ng-mm-comment'));
     for (const node of this.doc.nodes) {
-      this.minimap.append(this.mapRect(doc, nodeRect(this.positioned(node), this.fieldCount(node.type)), 'ng-mm-node'));
+      this.minimap.append(this.mapRect(doc, this.nodeBox(node), 'ng-mm-node'));
     }
     const width = this.stage.clientWidth / this.zoom;
     const height = this.stage.clientHeight / this.zoom;
@@ -575,7 +603,7 @@ export class NodeGraphView {
     }
     const pin = target?.closest<HTMLElement>('[data-pin-id]');
     if (pin?.dataset.pinNode && pin.dataset.pinId) {
-      this.beginWire(event, { node: pin.dataset.pinNode, pin: pin.dataset.pinId }, (pin.dataset.direction as PinDirection) || 'out');
+      this.beginWire(event, { node: pin.dataset.pinNode, pin: pin.dataset.pinId }, pin.dataset.direction === 'in' ? 'in' : 'out');
       return;
     }
     const node = target?.closest<HTMLElement>('.ng-node');
@@ -797,8 +825,8 @@ export class NodeGraphView {
       event.preventDefault();
       this.selection = {
         nodes: this.doc.nodes.map((node) => node.id),
-        comments: this.doc.comments.map((comment) => comment.id),
-        groups: this.doc.groups.map((group) => group.id),
+        comments: this.comments().map((comment) => comment.id),
+        groups: this.groups().map((group) => group.id),
         edge: null,
       };
       this.render();
@@ -945,7 +973,7 @@ export class NodeGraphView {
       return;
     }
     if (!this.selection.comments.includes(id)) this.selection = { nodes: [], comments: [id], groups: [], edge: null };
-    const comment = this.doc.comments.find((item) => item.id === id);
+    const comment = this.comments().find((item) => item.id === id);
     if (!comment) return;
     this.render();
     this.capture(event);
@@ -954,7 +982,7 @@ export class NodeGraphView {
       pointerId: event.pointerId,
       id,
       origin: this.screenToWorld(event.clientX, event.clientY),
-      rect: { ...comment.rect },
+      rect: this.commentBox(id),
     };
   }
 
@@ -965,11 +993,11 @@ export class NodeGraphView {
       return;
     }
     if (!this.selection.groups.includes(id)) this.selection = { nodes: [], comments: [], groups: [id], edge: null };
-    const group = this.doc.groups.find((item) => item.id === id);
+    const group = this.groups().find((item) => item.id === id);
     if (!group) return;
     this.render();
     const nodes = new Map<string, Vec2>();
-    for (const nodeId of group.nodeIds) {
+    for (const nodeId of group.nodeIds ?? []) {
       const node = this.doc.nodes.find((item) => item.id === nodeId);
       if (node) nodes.set(nodeId, { ...nodePos(node) });
     }
@@ -979,13 +1007,13 @@ export class NodeGraphView {
       pointerId: event.pointerId,
       id,
       origin: this.screenToWorld(event.clientX, event.clientY),
-      rect: { ...group.rect },
+      rect: this.groupBox(id),
       nodes,
     };
   }
 
   private beginResize(event: PointerEvent, id: string): void {
-    const comment = this.doc.comments.find((item) => item.id === id);
+    const comment = this.comments().find((item) => item.id === id);
     if (!comment) return;
     event.preventDefault();
     this.capture(event);
@@ -994,11 +1022,11 @@ export class NodeGraphView {
       pointerId: event.pointerId,
       id,
       origin: this.screenToWorld(event.clientX, event.clientY),
-      rect: { ...comment.rect },
+      rect: this.commentBox(id),
     };
   }
 
-  private beginWire(event: PointerEvent, origin: GraphEndpoint, dir: PinDirection): void {
+  private beginWire(event: PointerEvent, origin: PinEndpoint, dir: PinSpec['direction']): void {
     event.preventDefault();
     const world = this.screenToWorld(event.clientX, event.clientY);
     this.capture(event);
@@ -1006,7 +1034,7 @@ export class NodeGraphView {
     this.syncFrame();
   }
 
-  private finishWire(event: PointerEvent, origin: GraphEndpoint): void {
+  private finishWire(event: PointerEvent, origin: PinEndpoint): void {
     const direct = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-pin-id]') : null;
     const fallen = this.root.ownerDocument.elementFromPoint(event.clientX, event.clientY);
     const pin = direct ?? (fallen instanceof Element ? fallen.closest<HTMLElement>('[data-pin-id]') : null);
@@ -1027,15 +1055,15 @@ export class NodeGraphView {
       return;
     }
     const nodes = idsTouchingRect(
-      this.doc.nodes.map((node) => ({ id: node.id, rect: nodeRect(node, this.fieldCount(node.type)) })),
+      this.doc.nodes.map((node) => ({ id: node.id, rect: this.nodeBox(node) })),
       rect,
     );
     const comments = idsTouchingRect(
-      this.doc.comments.map((comment) => ({ id: comment.id, rect: comment.rect })),
+      this.comments().map((comment) => ({ id: comment.id, rect: this.commentBox(comment.id) })),
       rect,
     );
     const groups = idsTouchingRect(
-      this.doc.groups.map((group) => ({ id: group.id, rect: group.rect })),
+      this.groups().map((group) => ({ id: group.id, rect: this.groupBox(group.id) })),
       rect,
     );
     this.selection = {
@@ -1081,7 +1109,7 @@ export class NodeGraphView {
     }
     const rects = this.selection.nodes.flatMap((id) => {
       const node = this.doc.nodes.find((item) => item.id === id);
-      return node ? [nodeRect(node, this.fieldCount(node.type))] : [];
+      return node ? [this.nodeBox(node)] : [];
     });
     const bounds = unionRects(rects);
     if (!bounds) return;
@@ -1140,7 +1168,10 @@ export class NodeGraphView {
     for (const pin of this.world.querySelectorAll<HTMLElement>('[data-pin-id]')) {
       pin.classList.remove('is-compatible', 'is-incompatible');
       if (this.drag.kind !== 'wire' || !pin.dataset.pinNode || !pin.dataset.pinId) continue;
-      const result = evaluateConnection(this.doc, this.drag.origin, { node: pin.dataset.pinNode, pin: pin.dataset.pinId });
+      const result = evaluateConnection(this.doc, this.registry, this.drag.origin, {
+        node: pin.dataset.pinNode,
+        pin: pin.dataset.pinId,
+      });
       pin.classList.add(result.ok ? 'is-compatible' : 'is-incompatible');
     }
   }
@@ -1176,37 +1207,61 @@ export class NodeGraphView {
     return { ...node, pos };
   }
 
-  private commentRect(id: string, rect: GraphRect): GraphRect {
-    return this.previewComment?.get(id) ?? rect;
+  private comments(): NonNullable<GraphDoc['comments']> {
+    return this.doc.comments ?? [];
   }
 
-  private groupRect(id: string, rect: GraphRect): GraphRect {
-    return this.previewGroup?.get(id) ?? rect;
+  private groups(): NonNullable<GraphDoc['groups']> {
+    return this.doc.groups ?? [];
+  }
+
+  private commentBox(id: string): GraphRect {
+    const comment = this.comments().find((item) => item.id === id);
+    const base = comment ? layoutComment(comment) : { x: 0, y: 0, w: 200, h: 96 };
+    return this.previewComment?.get(id) ?? base;
+  }
+
+  private groupBox(id: string): GraphRect {
+    const group = this.groups().find((item) => item.id === id);
+    const base = group ? layoutGroup(group) : { x: 0, y: 0, w: 200, h: 120 };
+    return this.previewGroup?.get(id) ?? base;
   }
 
   private fieldCount(type: string): number {
-    return this.registry.get(type)?.fields?.length ?? 0;
+    return nodeFields(this.registry.get(type)).length;
   }
 
-  private nodeById(id: string): GraphNode {
-    const node = this.doc.nodes.find((item) => item.id === id);
-    if (!node) return { id, type: '', pins: [], props: {}, pos: { x: 0, y: 0 } };
-    return this.positioned(node);
+  private nodeBox(node: GraphNode): GraphRect {
+    const positioned = this.positioned(node);
+    return nodeRect(positioned, nodePins(positioned, this.registry), this.fieldCount(node.type));
+  }
+
+  private anchor(endpoint: PinEndpoint): Vec2 | null {
+    const node = this.doc.nodes.find((item) => item.id === endpoint.node);
+    if (!node) return null;
+    const positioned = this.positioned(node);
+    return pinAnchor(positioned, nodePins(positioned, this.registry), endpoint.pin);
   }
 
   private edgeEnds(fromNode: string, fromPin: string, toNode: string, toPin: string): { from: Vec2; to: Vec2 } | null {
-    const from = pinAnchor(this.nodeById(fromNode), fromPin);
-    const to = pinAnchor(this.nodeById(toNode), toPin);
+    const from = this.anchor({ node: fromNode, pin: fromPin });
+    const to = this.anchor({ node: toNode, pin: toPin });
     if (!from || !to) return null;
     return { from, to };
   }
 
-  private pinKind(endpoint: GraphEndpoint): string {
-    return this.doc.nodes.find((node) => node.id === endpoint.node)?.pins.find((pin) => pin.id === endpoint.pin)?.kind ?? 'exec';
+  private pinSpec(endpoint: PinEndpoint): PinSpec | undefined {
+    const node = this.doc.nodes.find((item) => item.id === endpoint.node);
+    if (!node) return undefined;
+    return nodePins(node, this.registry).find((pin) => pin.name === endpoint.pin);
   }
 
-  private pinType(endpoint: GraphEndpoint): string {
-    const pin = this.doc.nodes.find((node) => node.id === endpoint.node)?.pins.find((item) => item.id === endpoint.pin);
+  private pinKind(endpoint: PinEndpoint): string {
+    return this.pinSpec(endpoint)?.kind ?? 'exec';
+  }
+
+  private pinType(endpoint: PinEndpoint): string {
+    const pin = this.pinSpec(endpoint);
     if (!pin || pin.kind === 'exec') return 'exec';
     return pin.dataType ?? 'any';
   }

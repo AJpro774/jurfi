@@ -1,25 +1,4 @@
-import type { GraphEdge } from '@jurfi/script';
-
-/** A live wire value. `wireId` is `edge.id`, or the endpoint key when the edge has no id. */
-export interface DebugWireEvent {
-  kind: 'wire';
-  wireId: string;
-  value: unknown;
-}
-
-/** A node execution highlight. `enter` marks the node; `exit` clears it. */
-export interface DebugNodeEvent {
-  kind: 'node';
-  nodeId: string;
-  phase: 'enter' | 'exit';
-}
-
-export type DebugEvent = DebugWireEvent | DebugNodeEvent;
-
-/** Push debugger events. The canvas applies each event as it arrives. */
-export interface DebugSource {
-  subscribe(listener: (event: DebugEvent) => void): () => void;
-}
+import type { DebugEvent, GraphEdge } from '@jurfi/script';
 
 export interface DebugOverlay {
   executing: Set<string>;

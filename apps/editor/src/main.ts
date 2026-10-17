@@ -1,11 +1,12 @@
 import '@jurfi/ui';
 import '@jurfi/editor/shell.css';
-import { createEditor, registerNodeGraphPanel, type Editor } from '@jurfi/editor';
+import { createEditor, registerNodeGraphPanel, registerViewportPanel, type Editor } from '@jurfi/editor';
 
 const root = document.querySelector('#app');
 if (!(root instanceof HTMLElement)) throw new Error('Jurfi editor is missing #app');
 const app: HTMLElement = root;
 
+registerViewportPanel();
 registerNodeGraphPanel();
 
 let active: Editor | undefined;

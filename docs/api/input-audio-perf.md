@@ -187,3 +187,43 @@ function frame() {
 }
 console.log(JSON.stringify(perf), perf.checkBudgets());
 ```
+
+### Clock and RNG (`@jurfi/perf`)
+
+No dependency on `@jurfi/core`. Fixed-step timing plus a deterministic seeded RNG.
+
+```ts
+function createClock(opts?: { fixedStepMs?: number /* 1000/60 */; maxCatchUp?: number /* 5 */ }): Clock;
+function createTestClock(fixedStepMs?: number /* 1000/60 */): TestClock;
+interface Clock {
+  now(): number;            // simulated ms = frame * fixedStepMs; moves only via step()
+  tick(realMs: number): void; // add elapsed real ms (a delta); backlog capped at maxCatchUp steps
+  step(): boolean;          // consume one fixed step if accumulated; false otherwise
+  readonly alpha: number;   // accumulator / fixedStepMs, for render interpolation
+  readonly frame: number;   // fixed steps consumed
+  reset(): void;
+}
+interface TestClock extends Clock { advance(n: number): void }  // n deterministic fixed steps, no real time
+
+function createRng(seed: number | string): Rng;   // PCG32 (XSH-RR); never uses Math.random
+interface Rng {
+  next(): number;                       // [0, 1)
+  int(min: number, max: number): number; // integer in [min, max): min inclusive, max EXCLUSIVE; throws if max <= min
+  pick<T>(arr: readonly T[]): T;        // throws on empty
+  fork(label: string): Rng;             // independent stream; does not advance the parent
+  state: string;                        // get/set (32 hex chars) to save/replay a stream
+}
+```
+
+`?test=1` samples must drive time through `createTestClock().advance(n)` only, and take randomness from `createRng(seed)`.
+
+```ts
+const clock = import.meta.env?.test ? createTestClock() : createClock();
+const rng = createRng('level-1'); const particles = rng.fork('particles');
+function frame(realDeltaMs: number) {
+  clock.tick(realDeltaMs);
+  while (clock.step()) update(clock.now());
+  render(clock.alpha);
+}
+const saved = rng.state; /* ... */ rng.state = saved; // replay
+```

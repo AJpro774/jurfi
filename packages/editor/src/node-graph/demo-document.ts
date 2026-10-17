@@ -1,8 +1,8 @@
-import type { GraphEndpoint } from '@jurfi/script';
+import type { PinEndpoint } from '@jurfi/script';
 import { createUndoStack } from '../undo';
 import { createGraphController } from './controller';
 import { nodeRect, padRect, unionRects } from './geometry';
-import { createDefaultRegistry } from './registry';
+import { createDefaultRegistry, nodeFields, nodePins } from './registry';
 import { createEmptyGraph } from './serialize';
 
 /** A small valid graph so the panel is runnable the moment it mounts. */
@@ -15,39 +15,33 @@ export function createDemoGraph() {
   });
 
   const start = must(controller.addNode('core/OnStart', { x: 48, y: 72 }));
-  const sequence = must(controller.addNode('core/Sequence', { x: 320, y: 64 }));
-  const hello = must(controller.addNode('core/String', { x: 320, y: 250 }));
-  controller.setProp(hello, 'value', 'Hello, Jurfi');
-  const printHello = must(controller.addNode('core/Print', { x: 600, y: 48 }));
-  const flag = must(controller.addNode('core/Bool', { x: 600, y: 250 }));
-  controller.setProp(flag, 'value', true);
-  const branch = must(controller.addNode('core/Branch', { x: 880, y: 48 }));
-  const taken = must(controller.addNode('core/String', { x: 880, y: 280 }));
-  controller.setProp(taken, 'value', 'Branch taken');
-  const printTaken = must(controller.addNode('core/Print', { x: 1160, y: 36 }));
+  const sequence = must(controller.addNode('core/Sequence', { x: 340, y: 48 }));
+  const greet = must(controller.addNode('core/SetVariable', { x: 680, y: 24 }));
+  controller.setProp(greet, 'name', 'greeting');
+  controller.setPin(greet, 'value', 'Hello, Jurfi');
+  const branch = must(controller.addNode('core/Branch', { x: 680, y: 220 }));
+  controller.setPin(branch, 'condition', true);
+  const taken = must(controller.addNode('core/SetVariable', { x: 1020, y: 200 }));
+  controller.setProp(taken, 'name', 'branch');
+  controller.setPin(taken, 'value', 'taken');
 
-  link(controller, { node: start, pin: 'exec' }, { node: sequence, pin: 'exec' });
-  link(controller, { node: sequence, pin: 'then0' }, { node: printHello, pin: 'exec' });
-  link(controller, { node: hello, pin: 'value' }, { node: printHello, pin: 'message' });
+  link(controller, { node: start, pin: 'then' }, { node: sequence, pin: 'exec' });
+  link(controller, { node: sequence, pin: 'then0' }, { node: greet, pin: 'exec' });
   link(controller, { node: sequence, pin: 'then1' }, { node: branch, pin: 'exec' });
-  link(controller, { node: flag, pin: 'value' }, { node: branch, pin: 'condition' });
-  link(controller, { node: branch, pin: 'thenTrue' }, { node: printTaken, pin: 'exec' });
-  link(controller, { node: taken, pin: 'value' }, { node: printTaken, pin: 'message' });
+  link(controller, { node: branch, pin: 'true' }, { node: taken, pin: 'exec' });
 
   const document = controller.getDocument();
-  const grouped = new Set([branch, taken, printTaken]);
-  const rects = document.nodes.filter((node) => grouped.has(node.id)).map((node) => nodeRect(node, fieldsFor(registry, node.type)));
+  const grouped = new Set([branch, taken]);
+  const rects = document.nodes
+    .filter((node) => grouped.has(node.id))
+    .map((node) => nodeRect(node, nodePins(node, registry), nodeFields(registry.get(node.type)).length));
   const bounds = unionRects(rects);
   if (bounds) controller.addGroup([...grouped], padRect(bounds, 28), 'Decision');
   controller.addComment(
     { x: 40, y: 420, w: 280, h: 96 },
-    'Exec pins are squares. Data pins are circles and only connect when the types match.',
+    'Exec pins are diamonds. Data pins are circles and only connect when the types match.',
   );
   return controller.getDocument();
-}
-
-function fieldsFor(registry: ReturnType<typeof createDefaultRegistry>, type: string): number {
-  return registry.get(type)?.fields?.length ?? 0;
 }
 
 function must(id: string | null): string {
@@ -55,7 +49,7 @@ function must(id: string | null): string {
   return id;
 }
 
-function link(controller: ReturnType<typeof createGraphController>, from: GraphEndpoint, to: GraphEndpoint): void {
+function link(controller: ReturnType<typeof createGraphController>, from: PinEndpoint, to: PinEndpoint): void {
   const error = controller.connect(from, to);
   if (error) throw new Error(error);
 }

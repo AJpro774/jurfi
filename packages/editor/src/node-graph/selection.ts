@@ -1,5 +1,4 @@
-import type { GraphRect } from '@jurfi/script';
-import { intersects } from './geometry';
+import { intersects, type GraphRect } from './geometry';
 
 export interface GraphSelection {
   nodes: string[];

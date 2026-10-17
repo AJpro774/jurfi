@@ -1,4 +1,14 @@
-import type { GraphNode, GraphRect, PinDirection, Vec2 } from '@jurfi/script';
+import type { GraphComment, GraphGroup, GraphNode, GraphPoint, PinSpec } from '@jurfi/script';
+
+/** Editor layout rectangle. Groups and comments store this as `pos` + `size`. */
+export interface GraphRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export type Vec2 = GraphPoint;
 
 /** Layout numbers shared with the canvas CSS variables set at mount. */
 export const LAYOUT = {
@@ -21,9 +31,9 @@ export function nodePos(node: GraphNode): Vec2 {
   return node.pos ?? { x: 0, y: 0 };
 }
 
-export function nodeRect(node: GraphNode, fieldCount: number): GraphRect {
-  const inputs = node.pins.filter((pin) => pin.direction === 'in').length;
-  const outputs = node.pins.filter((pin) => pin.direction === 'out').length;
+export function nodeRect(node: GraphNode, pins: readonly PinSpec[], fieldCount: number): GraphRect {
+  const inputs = pins.filter((pin) => pin.direction === 'in').length;
+  const outputs = pins.filter((pin) => pin.direction === 'out').length;
   const pos = nodePos(node);
   return {
     x: pos.x,
@@ -33,16 +43,40 @@ export function nodeRect(node: GraphNode, fieldCount: number): GraphRect {
   };
 }
 
-export function pinAnchor(node: GraphNode, pinId: string): Vec2 | null {
-  const pin = node.pins.find((item) => item.id === pinId);
+export function pinAnchor(node: GraphNode, pins: readonly PinSpec[], pinName: string): Vec2 | null {
+  const pin = pins.find((item) => item.name === pinName);
   if (!pin) return null;
-  const row = node.pins.filter((item) => item.direction === pin.direction).findIndex((item) => item.id === pinId);
+  const row = pins.filter((item) => item.direction === pin.direction).findIndex((item) => item.name === pinName);
   if (row < 0) return null;
   const pos = nodePos(node);
   return {
     x: pos.x + (pin.direction === 'out' ? LAYOUT.nodeWidth : 0),
     y: pos.y + LAYOUT.header + row * LAYOUT.row + LAYOUT.row / 2,
   };
+}
+
+export function blockRect(
+  block: { pos?: GraphPoint; size?: { width: number; height: number } },
+  fallback: { w: number; h: number },
+): GraphRect {
+  return {
+    x: block.pos?.x ?? 0,
+    y: block.pos?.y ?? 0,
+    w: block.size?.width ?? fallback.w,
+    h: block.size?.height ?? fallback.h,
+  };
+}
+
+export function groupRect(group: GraphGroup): GraphRect {
+  return blockRect(group, { w: 200, h: 120 });
+}
+
+export function commentRect(comment: GraphComment): GraphRect {
+  return blockRect(comment, { w: 200, h: 96 });
+}
+
+export function rectFields(rect: GraphRect): { pos: GraphPoint; size: { width: number; height: number } } {
+  return { pos: { x: rect.x, y: rect.y }, size: { width: rect.w, height: rect.h } };
 }
 
 export function intersects(a: GraphRect, b: GraphRect): boolean {
@@ -80,7 +114,7 @@ export interface WireGeometry {
   mid: Vec2;
 }
 
-export function wireGeometry(from: Vec2, to: Vec2, fromDir: PinDirection = 'out'): WireGeometry {
+export function wireGeometry(from: Vec2, to: Vec2, fromDir: PinSpec['direction'] = 'out'): WireGeometry {
   const sign = fromDir === 'out' ? 1 : -1;
   const dx = Math.max(48, Math.abs(to.x - from.x) * 0.45) * sign;
   const c1 = { x: from.x + dx, y: from.y };

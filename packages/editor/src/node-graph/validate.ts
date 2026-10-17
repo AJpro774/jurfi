@@ -1,16 +1,18 @@
-import type { GraphDocument, GraphEdge, GraphEndpoint, GraphNode, GraphPin } from '@jurfi/script';
+import type { GraphDoc, GraphEdge, NodeRegistry, PinEndpoint, PinSpec } from '@jurfi/script';
+import type { GraphNode } from '@jurfi/script';
+import { nodePins } from './registry';
 
 export interface LocatedPin {
   node: GraphNode;
-  pin: GraphPin;
+  pin: PinSpec;
 }
 
 export type ConnectResult = { ok: true; edge: GraphEdge } | { ok: false; message: string };
 
-export function findPin(doc: GraphDocument, endpoint: GraphEndpoint): LocatedPin | null {
+export function findPin(doc: GraphDoc, registry: NodeRegistry, endpoint: PinEndpoint): LocatedPin | null {
   const node = doc.nodes.find((item) => item.id === endpoint.node);
   if (!node) return null;
-  const pin = node.pins.find((item) => item.id === endpoint.pin);
+  const pin = nodePins(node, registry).find((item) => item.name === endpoint.pin);
   if (!pin) return null;
   return { node, pin };
 }
@@ -23,11 +25,16 @@ export function findPin(doc: GraphDocument, endpoint: GraphEndpoint): LocatedPin
  * - an input accepts a single edge (no fan-in); outputs may fan out
  * - exec edges must not introduce a cycle; data cycles are allowed
  */
-export function evaluateConnection(doc: GraphDocument, a: GraphEndpoint, b: GraphEndpoint): ConnectResult {
-  const left = findPin(doc, a);
-  const right = findPin(doc, b);
+export function evaluateConnection(
+  doc: GraphDoc,
+  registry: NodeRegistry,
+  a: PinEndpoint,
+  b: PinEndpoint,
+): ConnectResult {
+  const left = findPin(doc, registry, a);
+  const right = findPin(doc, registry, b);
   if (!left || !right) return { ok: false, message: 'Unknown node or pin' };
-  if (left.node.id === right.node.id && left.pin.id === right.pin.id) {
+  if (left.node.id === right.node.id && left.pin.name === right.pin.name) {
     return { ok: false, message: 'Cannot connect a pin to itself' };
   }
 
@@ -68,7 +75,7 @@ export function evaluateConnection(doc: GraphDocument, a: GraphEndpoint, b: Grap
   const fanIn = doc.edges.some((edge) => edge.to.node === targetEnd.node && edge.to.pin === targetEnd.pin);
   if (fanIn) return { ok: false, message: 'Input already connected' };
 
-  if (source.pin.kind === 'exec' && createsExecCycle(doc, sourceEnd.node, targetEnd.node)) {
+  if (source.pin.kind === 'exec' && createsExecCycle(doc, registry, sourceEnd.node, targetEnd.node)) {
     return { ok: false, message: 'Exec cycle' };
   }
 
@@ -81,12 +88,12 @@ export function evaluateConnection(doc: GraphDocument, a: GraphEndpoint, b: Grap
   };
 }
 
-export function createsExecCycle(doc: GraphDocument, fromNode: string, toNode: string): boolean {
+export function createsExecCycle(doc: GraphDoc, registry: NodeRegistry, fromNode: string, toNode: string): boolean {
   if (fromNode === toNode) return true;
   const adjacent = new Map<string, string[]>();
   for (const edge of doc.edges) {
-    const source = findPin(doc, edge.from);
-    const target = findPin(doc, edge.to);
+    const source = findPin(doc, registry, edge.from);
+    const target = findPin(doc, registry, edge.to);
     if (!source || !target) continue;
     if (source.pin.kind !== 'exec' || target.pin.kind !== 'exec') continue;
     const next = adjacent.get(edge.from.node) ?? [];
@@ -110,12 +117,15 @@ export function createsExecCycle(doc: GraphDocument, fromNode: string, toNode: s
  * Validate every edge against the edges accepted before it.
  * Successful edges are rewritten output → input.
  */
-export function normalizeConnections(doc: GraphDocument): { document: GraphDocument; issues: string[] } {
+export function normalizeConnections(
+  doc: GraphDoc,
+  registry: NodeRegistry,
+): { document: GraphDoc; issues: string[] } {
   const issues: string[] = [];
   const edges: GraphEdge[] = [];
-  const partial: GraphDocument = { ...doc, edges };
+  const partial: GraphDoc = { ...doc, edges };
   for (const edge of doc.edges) {
-    const result = evaluateConnection(partial, edge.from, edge.to);
+    const result = evaluateConnection(partial, registry, edge.from, edge.to);
     if (!result.ok) issues.push(result.message);
     else edges.push(edge.id ? { ...result.edge, id: edge.id } : result.edge);
   }
@@ -123,6 +133,12 @@ export function normalizeConnections(doc: GraphDocument): { document: GraphDocum
 }
 
 /** Validate every edge against the edges accepted before it. */
-export function validateGraph(doc: GraphDocument): string[] {
-  return normalizeConnections(doc).issues;
+export function validateGraph(doc: GraphDoc, registry: NodeRegistry): string[] {
+  const issues = [...normalizeConnections(doc, registry).issues];
+  if (doc.subgraphs) {
+    for (const [id, child] of Object.entries(doc.subgraphs)) {
+      for (const issue of validateGraph(child, registry)) issues.push(`${id}: ${issue}`);
+    }
+  }
+  return issues;
 }

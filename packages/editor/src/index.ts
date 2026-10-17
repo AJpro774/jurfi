@@ -59,8 +59,12 @@ export type { CreateEditorOptions, Editor } from './shell';
 
 export { ensurePlaceholderPanels } from './panels';
 
+export { registerViewportPanel, VIEWPORT_PANEL_ID } from './viewport/register';
+export { setViewportIdBuffer } from './viewport/panel';
+export type { IdBufferPicker } from './viewport/picking';
+export type { ShadingMode, ViewMode } from './viewport/types';
+
 export {
-  BUILTIN_NODES,
   createDefaultRegistry,
   createDemoGraph,
   createEmptyGraph,
@@ -78,22 +82,22 @@ export {
   validateGraph,
 } from './node-graph';
 export type {
-  DebugEvent,
-  DebugSource,
   GraphClipboard,
   GraphDocAdapter,
-  NodeDefinition,
+  GraphRect,
+  NodeDef,
   NodeGraphHandle,
   NodeGraphOptions,
   NodeRegistry,
+  PinSpec,
 } from './node-graph';
 export type {
+  DebugEvent,
+  DebugSource,
   GraphComment,
-  GraphDocument,
+  GraphDoc,
   GraphEdge,
-  GraphEndpoint,
   GraphGroup,
   GraphNode,
-  GraphPin,
-  RuntimeGraphDocument,
+  PinEndpoint,
 } from '@jurfi/script';

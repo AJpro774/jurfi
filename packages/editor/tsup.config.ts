@@ -23,5 +23,6 @@ export default defineConfig({
   clean: true,
   sourcemap: true,
   target: 'es2022',
+  injectStyle: true,
   esbuildPlugins: [cssRaw],
 });
