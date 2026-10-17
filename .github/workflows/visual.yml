@@ -19,9 +19,33 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Check Playwright image matches pinned version
+        run: node tooling/check-playwright-pin.mjs
+      - name: Build samples
+        run: pnpm --filter @jurfi/samples... build
+      - name: Export guard
+        run: pnpm export-guard
+        env:
+          REQUIRE_DIST: '1'
+      # NOTE: @jurfi/perf lives on branch aip/input-audio-perf and is not merged
+      # here yet. This step and the JURFI_PERF_DIST env below are written for
+      # when it merges; until then the filter matches no package.
+      - name: Build perf package
+        run: pnpm --filter @jurfi/perf build
+      - name: Visual-tests package tests
+        run: pnpm --filter @jurfi/visual-tests test
+        env:
+          JURFI_PERF_DIST: ${{ github.workspace }}/packages/perf/dist
       - run: pnpm --filter @jurfi/visual-tests visual
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: playwright-report
           path: tests/visual/playwright-report
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-test-results
+          path: tests/visual/test-results
+          if-no-files-found: ignore

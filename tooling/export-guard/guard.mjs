@@ -9,8 +9,16 @@ export function scan(dir){
   for (const f of walk(dir)) { const t=fs.readFileSync(f,'latin1'); for (const re of FORBIDDEN) { const m=re.exec(t); if (m) { hits.push({file:f,match:m[0]}); break; } } }
   return hits;
 }
+export function requireDistProblem(dir, env = process.env){
+  if (env.REQUIRE_DIST !== '1') return null;
+  if (!fs.existsSync(dir)) return 'REQUIRE_DIST=1 but dist directory is missing: '+dir+' (build samples first)';
+  if (!fs.statSync(dir).isDirectory() || fs.readdirSync(dir).length === 0) return 'REQUIRE_DIST=1 but dist directory is empty: '+dir+' (build samples first)';
+  return null;
+}
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const dir = path.resolve(process.cwd(), process.argv[2] ?? 'apps/samples/dist');
+  const problem = requireDistProblem(dir);
+  if (problem) { console.error('export-guard FAILED: '+problem); process.exit(1); }
   if (!fs.existsSync(dir)) { console.error('export-guard: directory not found: '+dir+' (build samples first)'); process.exit(2); }
   const hits = scan(dir);
   if (hits.length) { console.error('export-guard FAILED: @jurfi/editor referenced in built samples:'); for (const h of hits) console.error('  '+h.file+'  ('+h.match+')'); process.exit(1); }
