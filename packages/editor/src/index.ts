@@ -1,8 +1,4 @@
-import { VERSION } from '@jurfi/core';
-
-export function editorTitle(): string {
-  return `Jurfi Editor v${VERSION}`;
-}
+export { editorTitle } from './title';
 
 export { registerPanel, getPanel, listPanels, subscribePanels } from './registry';
 export type { PanelDefinition, PanelChange } from './registry';
@@ -57,3 +53,8 @@ export type { ProjectFile } from './project';
 
 export { browserStore, memoryStore } from './storage';
 export type { KeyValueStore } from './storage';
+
+export { createEditor } from './shell';
+export type { CreateEditorOptions, Editor } from './shell';
+
+export { ensurePlaceholderPanels } from './panels';

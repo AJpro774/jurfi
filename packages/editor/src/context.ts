@@ -95,6 +95,8 @@ export function createEditorContext(options: EditorContextOptions = {}): EditorC
       if (playSnapshot) world.deserialize(playSnapshot);
       playSnapshot = null;
       undo.clear();
+      const keep = selection.get().filter((id) => world.get(id) !== undefined);
+      if (keep.length !== selection.get().length) selection.set(keep);
       setPlayState('editing');
       bus.emit('status', { message: 'Stopped', level: 'info' });
     },
