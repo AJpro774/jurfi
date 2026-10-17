@@ -50,6 +50,7 @@
 
 .jp-entity {
   gap: var(--space-1);
+  cursor: grab;
 }
 
 .jp-name,

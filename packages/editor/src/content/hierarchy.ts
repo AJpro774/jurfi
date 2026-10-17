@@ -70,6 +70,7 @@ export function mountHierarchy(el: HTMLElement, ctx: EditorContext): () => void 
   let focusId: string | null = null;
   let anchorId: string | null = null;
   let dragId: string | null = null;
+  let suppressClick = false;
   let focusAfterRender: string | null = null;
   let rendering = false;
   const collapsed = new Set<string>();
@@ -172,7 +173,7 @@ export function mountHierarchy(el: HTMLElement, ctx: EditorContext): () => void 
     item.style.setProperty('--je-depth', String(depth));
     item.ariaSelected = selected ? 'true' : 'false';
     item.tabIndex = entity.id === focusId ? 0 : -1;
-    item.draggable = !flags.locked;
+    item.draggable = false;
     if (expandable) item.ariaExpanded = filtering || !collapsed.has(entity.id) ? 'true' : 'false';
 
     if (expandable) {
@@ -249,8 +250,44 @@ export function mountHierarchy(el: HTMLElement, ctx: EditorContext): () => void 
     item.append(visibility, lock);
 
     item.addEventListener('click', (event) => {
+      if (suppressClick) {
+        suppressClick = false;
+        return;
+      }
       if ((event.target as HTMLElement | null)?.closest('button, input')) return;
       onSelect(entity.id, event.shiftKey, event.metaKey || event.ctrlKey);
+    });
+    item.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0 || flags.locked) return;
+      const target = event.target;
+      if (!(target instanceof Element) || target.closest('button, input')) return;
+      const pointerId = event.pointerId;
+      const startX = event.clientX;
+      const startY = event.clientY;
+      let moved = false;
+      const onMove = (ev: PointerEvent): void => {
+        if (ev.pointerId !== pointerId) return;
+        if (!moved && Math.hypot(ev.clientX - startX, ev.clientY - startY) < 5) return;
+        moved = true;
+        dragId = entity.id;
+        markDrop(ev.clientX, ev.clientY, entity.id);
+      };
+      const onUp = (ev: PointerEvent): void => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        if (!moved) return;
+        suppressClick = true;
+        dragId = null;
+        const hit = rowAt(ev.clientX, ev.clientY);
+        const row = hit ? panel.querySelector<HTMLElement>(`[data-id="${escapeAttr(hit)}"]`) : null;
+        const zone = row ? dropZone(row, ev.clientY) : 'inside';
+        clearDropMarks();
+        const targetEntity = hit ? ctx.world.get(hit) : undefined;
+        if (!hit || hit === entity.id || !targetEntity) return;
+        moveEntity(ctx, entity.id, placementFor(entity.id, targetEntity, zone));
+      };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
     });
     item.addEventListener('dblclick', (event) => {
       if ((event.target as HTMLElement | null)?.closest('button')) return;
@@ -264,7 +301,7 @@ export function mountHierarchy(el: HTMLElement, ctx: EditorContext): () => void 
     item.addEventListener('dragover', (event) => {
       if (!dragId || dragId === entity.id) return;
       event.preventDefault();
-      item.dataset.drop = dropZone(item, event);
+      item.dataset.drop = dropZone(item, event.clientY);
     });
     item.addEventListener('dragleave', () => {
       delete item.dataset.drop;
@@ -276,7 +313,7 @@ export function mountHierarchy(el: HTMLElement, ctx: EditorContext): () => void 
       const source = dragId;
       dragId = null;
       if (!source || source === entity.id) return;
-      moveEntity(ctx, source, placementFor(source, entity, dropZone(item, event)));
+      moveEntity(ctx, source, placementFor(source, entity, dropZone(item, event.clientY)));
     });
     item.addEventListener('dragend', () => {
       dragId = null;
@@ -392,6 +429,25 @@ export function mountHierarchy(el: HTMLElement, ctx: EditorContext): () => void 
     if (!renameEntity(ctx, id, value)) render();
   }
 
+  function rowAt(x: number, y: number): string | null {
+    const node = document.elementFromPoint(x, y);
+    const row = node instanceof Element ? node.closest<HTMLElement>('[data-id]') : null;
+    return row?.dataset.id ?? null;
+  }
+
+  function markDrop(x: number, y: number, source: string): void {
+    clearDropMarks();
+    const id = rowAt(x, y);
+    if (!id || id === source) return;
+    const row = panel.querySelector<HTMLElement>(`[data-id="${escapeAttr(id)}"]`);
+    if (!row) return;
+    row.dataset.drop = dropZone(row, y);
+  }
+
+  function clearDropMarks(): void {
+    for (const row of panel.querySelectorAll<HTMLElement>('[data-drop]')) delete row.dataset.drop;
+  }
+
   function placementFor(source: string, target: EntityRecord, zone: 'before' | 'after' | 'inside'): Placement {
     if (zone === 'inside') return { parentId: target.id, beforeId: null };
     if (zone === 'before') return { parentId: target.parentId, beforeId: target.id };
@@ -406,10 +462,10 @@ function includeActive(query: string): boolean {
   return query.trim() !== '';
 }
 
-function dropZone(row: HTMLElement, event: DragEvent): 'before' | 'after' | 'inside' {
+function dropZone(row: HTMLElement, clientY: number): 'before' | 'after' | 'inside' {
   const rect = row.getBoundingClientRect();
   if (rect.height <= 0) return 'inside';
-  const y = event.clientY - rect.top;
+  const y = clientY - rect.top;
   if (y < rect.height * 0.25) return 'before';
   if (y > rect.height * 0.75) return 'after';
   return 'inside';
