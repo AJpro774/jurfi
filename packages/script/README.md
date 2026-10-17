@@ -98,6 +98,9 @@ Attach a `DebugSource` to receive events. Nothing is allocated for those events 
 | `core/And`, `core/Or`, `core/Not` | Logic. And/Or short-circuit. |
 | `core/Equal`, `core/NotEqual`, `core/Greater`, `core/GreaterEqual`, `core/Less`, `core/LessEqual` | Compare. Equal also matches entity refs by `id`. |
 | `core/Self`, `core/GetComponent`, `core/SetComponent`, `core/GetField`, `core/SetField` | Entity and component access through `ScriptWorld`. Unconnected entity pins use `world.self`. |
+| `core/SpawnEntity`, `core/DestroyEntity` | `world.create()` and `world.destroy()`. Spawn outputs the new entity ref. |
+| `core/AddComponent`, `core/RemoveComponent`, `core/HasComponent` | `world.add()`, `world.remove()`, and `world.has()`. Add throws if the component is already present. An omitted add value uses the schema default. |
+| `core/Query`, `core/ForEach` | Query returns an iterable of entity refs that have every name in `props.components`. ForEach runs `body` once per item, then `completed`. |
 | `core/Subgraph` | Runs `props.graph` from **this document’s** `subgraphs`, starting at that graph’s `core/OnStart` nodes, then continues. |
 
 A type that is registered but has no script handler compiles with an `unimplemented-node` warning. At runtime its exec pin `then` is followed and its data outputs are `undefined`. Flag `hidden: true` to keep that node out of the palette.
@@ -108,6 +111,6 @@ Loops are structured inside ForLoop and While, so a cycle of exec edges is a com
 
 `createScriptRuntime` implements `Disposable` from `@jurfi/core`. `core/Clamp` uses `clamp`. Components, fields, and per-entity variables go through `createScriptWorld`. `coreGaps.missing` is empty.
 
-`World` can also spawn, destroy, remove components, and query. Visual scripts have no nodes for those yet.
+Spawn, destroy, add, remove, has, and query call those methods on `world.ecs`. They need a `createScriptWorld()` world.
 
 `createMemoryWorld` is only a test stand-in. If `getField` / `setField` or `getVariable` / `setVariable` are omitted on a custom world, the runtime falls back to component-object fields and a side table keyed by `entity.id`. World-backed entity variables are not cleared by `start()` or `reload`.
