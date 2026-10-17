@@ -22,6 +22,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Update baselines (chromium, firefox, webkit)
         run: pnpm --filter @jurfi/visual-tests visual:update --project=chromium --project=firefox --project=webkit
+      - name: Verify new baselines pass (chromium, firefox, webkit)
+        run: pnpm --filter @jurfi/visual-tests visual --project=chromium --project=firefox --project=webkit
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -34,10 +36,20 @@ jobs:
           name: playwright-test-results
           path: tests/visual/test-results
           if-no-files-found: ignore
-      - uses: peter-evans/create-pull-request@v7
+      - id: create-pr
+        continue-on-error: true
+        uses: peter-evans/create-pull-request@v7
         with:
           branch: chore/update-visual-baselines
           title: 'chore: update visual baselines'
           commit-message: 'chore: update visual baselines'
           body: Automated baseline update from the pinned Playwright image.
           add-paths: tests/visual/baselines/**
+      - name: Print compare URL
+        if: always()
+        run: |
+          url="https://github.com/${{ github.repository }}/compare/main...chore/update-visual-baselines"
+          echo "Baseline branch: chore/update-visual-baselines"
+          echo "Open a PR manually if one was not created: $url"
+          echo "### Baseline update branch" >> "$GITHUB_STEP_SUMMARY"
+          echo "Compare / open PR: $url" >> "$GITHUB_STEP_SUMMARY"
