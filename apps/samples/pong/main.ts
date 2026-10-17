@@ -50,6 +50,8 @@ function layoutTouch(): void {
 }
 layoutTouch();
 addEventListener('resize', layoutTouch);
+addEventListener('orientationchange', layoutTouch);
+new ResizeObserver(layoutTouch).observe(canvas); // canvas is CSS-scaled; keep the hit region on its client rect
 // Touch dragging must not scroll/zoom the page (index.html also sets touch-action: none).
 canvas.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
 
@@ -81,7 +83,7 @@ function update(): void {
   input.update();
   const jump = input.action('jump').justPressed;
   const move = input.axis2('move').y; // up = -1, down = +1
-  // Touch: paddle centre follows the finger (canvas-space y); otherwise keyboard axis only.
+  // Touch: paddle centre follows the finger (ny is element-relative 0..1, so it is independent of CSS scale; * H gives the 640x400 canvas y); otherwise keyboard axis only.
   const p = input.pointer;
   const target = p.active && p.source === 'touch' ? p.ny * H : null;
   game.step(STEP, move, target, jump);

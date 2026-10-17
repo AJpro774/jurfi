@@ -4,7 +4,7 @@ Source: `apps/samples/pong`. Run it with `pnpm --filter @jurfi/samples dev` and 
 
 ## 1. Canvas and theme
 
-`index.html` holds one `<canvas id="game">`. Colors are read from the `--surface-0`, `--text-1` and `--accent` tokens that `@jurfi/ui` provides.
+`index.html` holds one `<canvas id="game" width="640" height="400">` whose internal resolution stays 640x400 while CSS scales it (8:5) to fill the window, so game logic is unchanged. Colors are read from the `--surface-0`, `--text-1` and `--accent` tokens that `@jurfi/ui` provides.
 
 ## 2. Game logic (`game.ts`)
 
@@ -39,7 +39,7 @@ input.setContext('ui');           // swap contexts, e.g. while a menu is open (g
 
 Because up is `y = -1` and canvas `y` grows downward, `axis2('move').y` can drive the paddle directly.
 
-Touch: a `VirtualButton('serve', ...)` covers the canvas (client pixels, re-laid-out on resize) so a tap serves. The paddle follows the finger using `input.pointer` (absolute position, refreshed in `input.update()`): when `pointer.source === 'touch'`, `pointer.ny * H` is passed as the `target` argument of `game.step`, and the paddle moves toward that y. (`VirtualStick.setAbsolute(true)` is an alternative that measures deflection from a fixed anchor.)
+Touch: a `VirtualButton('serve', ...)` covers the canvas (client pixels of the CSS-scaled canvas, re-laid-out on resize via `getBoundingClientRect`) so a tap serves. The paddle follows the finger using `input.pointer` (absolute position, refreshed in `input.update()`): when `pointer.source === 'touch'`, `pointer.ny * H` (`ny` is element-relative and normalized, so it is correct at any CSS scale) is passed as the `target` argument of `game.step`, and the paddle moves toward that y. (`VirtualStick.setAbsolute(true)` is an alternative that measures deflection from a fixed anchor.)
 
 Browser defaults: `preventDefaultKeys: true` makes `Input` call `preventDefault()` on `keydown` for every key bound in the action map (Space, Enter, WASD, arrows), so the page does not scroll. Pass a `KeyboardEvent.code` array to limit it, or change it later with `input.setPreventDefaultKeys()`.
 
