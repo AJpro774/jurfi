@@ -49,6 +49,7 @@ declare const dataBrand: unique symbol;
 export interface ComponentType<TData extends object = Record<string, unknown>> {
   readonly id: string;
   readonly storage: StorageKind;
+  readonly version: number;
   readonly schema: Schema;
   /** Phantom. Keeps the component's data shape on the type. */
   readonly [dataBrand]?: TData;
@@ -66,6 +67,7 @@ export interface NormalizedField {
 export interface NormalizedComponent {
   readonly id: string;
   readonly storage: StorageKind;
+  readonly version: number;
   readonly fields: readonly NormalizedField[];
   readonly fieldByName: ReadonlyMap<string, NormalizedField>;
 }
@@ -98,7 +100,7 @@ export function resolveStorage(id: string, storage?: StorageKind): StorageKind {
 export function defineComponent<const S extends Schema>(
   id: string,
   schema: S,
-  options?: { storage?: StorageKind },
+  options?: { storage?: StorageKind; version?: number },
 ): ComponentType<ComponentValue<S>> {
   if (typeof id !== 'string' || id.length === 0) {
     throw new EcsError('invalid-value', 'Component id must be a non-empty string');
@@ -107,6 +109,10 @@ export function defineComponent<const S extends Schema>(
     throw new EcsError('duplicate-id', `Component "${id}" is already defined`);
   }
   const storage = resolveStorage(id, options?.storage);
+  const version = options?.version ?? 1;
+  if (!Number.isInteger(version) || version < 1) {
+    throw new EcsError('invalid-value', `Component "${id}" version must be an integer >= 1`);
+  }
   const fields: NormalizedField[] = [];
   for (const [name, field] of Object.entries(schema)) {
     if (!isFieldType(field?.type)) {
@@ -117,10 +123,11 @@ export function defineComponent<const S extends Schema>(
     }
     fields.push(normalizeField(id, name, field.type, field.default));
   }
-  const component = { id, storage, schema } as ComponentType<ComponentValue<S>>;
+  const component = { id, storage, schema, version } as ComponentType<ComponentValue<S>>;
   const model: NormalizedComponent = {
     id,
     storage,
+    version,
     fields,
     fieldByName: new Map(fields.map((field) => [field.name, field])),
   };

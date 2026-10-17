@@ -10,6 +10,7 @@ export type EcsErrorCode =
   | 'cycle'
   | 'duplicate-alias'
   | 'duplicate-id'
+  | 'missing-migration'
   | 'disposed';
 
 export class EcsError extends Error {

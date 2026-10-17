@@ -28,7 +28,7 @@ world.getField(entity, Health, 'hp');
 world.setField(entity, Health, 'hp', 5);
 ```
 
-`defineComponent(id, schema, { storage })` accepts `sparse` (one object per entity) and `soa` (one column per lane). Storage defaults to `sparse`, except `Transform`, which defaults to `soa`. Field writes are checked against the schema: finite numbers, booleans, strings, entity ids, and vectors (`vec2`, `vec3`, `vec4`, `quat`, `color`). Vector lanes use a dotted path (`position.x`, `color.r`). A dotted write on a missing component creates it from defaults.
+`defineComponent(id, schema, { storage, version })` accepts `sparse` (one object per entity) and `soa` (one column per lane). Storage defaults to `sparse`, except `Transform`, which defaults to `soa`. `version` defaults to 1. Field writes are checked against the schema: finite numbers, booleans, strings, entity ids, and vectors (`vec2`, `vec3`, `vec4`, `quat`, `color`). Vector lanes use a dotted path (`position.x`, `color.r`). A dotted write on a missing component creates it from defaults.
 
 `Transform`, `Light`, and `Light2D` are built in. `Light2D` is its own component.
 
@@ -51,6 +51,8 @@ world.setField(entity, Health, 'hp', 5);
 | `toScene` / `loadScene` | Scene JSON, including dead-slot generations |
 | `renderScene` | `entities`, `worldMatrices`, `dirty`, and `view(component)` in parallel |
 | `dispose` | Drop storage |
+
+`registerMigration(componentId, fromVersion, fn)` stores one step from version N to N+1. `registerSceneMigration` and `registerPrefabMigration` do the same for the scene and prefab envelopes. `loadScene` and `instantiatePrefab` run those chains before schema checks: the envelope walks up to `SCENE_VERSION` or `PREFAB_VERSION`, then each component walks from the version saved in `componentVersions` (missing means 1) to the version passed to `defineComponent`. A hole in the chain throws `missing-migration`. `toScene` writes the current component versions so a re-save does not run the chain again. Registrations happen only when those functions are called.
 
 `renderScene()` lists alive entities in index order. `worldMatrices` holds column-major 4x4 matrices (16 floats each) computed from `Transform` and parent links. An entity without `Transform` contributes an identity matrix. `dirty[i]` is 1 when that world matrix changed since the previous extraction. `view(id)` returns component values aligned with `entities`.
 
