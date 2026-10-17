@@ -25,6 +25,7 @@
   "dependencies": {
     "@jurfi/core": "workspace:*",
     "@jurfi/render": "workspace:*",
+    "@jurfi/script": "workspace:*",
     "@jurfi/ui": "workspace:*"
   },
   "devDependencies": {

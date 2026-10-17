@@ -1,0 +1,54 @@
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--surface-0);
+  color: var(--text-1);
+  font: var(--ref-font-size-3) / var(--ref-font-lh-tight) var(--ref-font-sans);
+}
+
+#app {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+}
+
+.editor-bar {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  height: calc(var(--density-row-h) + var(--space-3));
+  padding-inline: var(--space-3);
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.editor-bar button {
+  height: var(--btn-h);
+  padding-inline: var(--btn-px);
+  color: var(--btn-fg);
+  background: var(--btn-bg);
+  border: 1px solid var(--btn-border);
+  border-radius: var(--btn-radius);
+  font: inherit;
+  cursor: pointer;
+}
+
+.editor-bar button[aria-pressed='true'] {
+  color: var(--btn-fg-primary);
+  background: var(--btn-bg-primary);
+  border-color: transparent;
+}
+
+#stats {
+  color: var(--text-2);
+  font-size: var(--ref-font-size-2);
+}
+
+#graph {
+  min-height: 0;
+}
