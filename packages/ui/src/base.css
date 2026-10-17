@@ -1,17 +1,17 @@
-@custom-media --jurfi-compact (max-width: 600px);
+@custom-media --compact (max-width: 600px);
 
 .jurfi-panel {
-  background: var(--jurfi-bg);
-  color: var(--jurfi-fg);
-  padding: var(--jurfi-space-3);
-  border-radius: var(--jurfi-radius);
-  font-family: var(--jurfi-font);
+  background: var(--panel-bg);
+  color: var(--panel-fg);
+  padding: var(--panel-pad);
+  border-radius: var(--panel-radius);
+  font-family: var(--ref-font-sans);
 
   &:hover {
-    outline: 1px solid var(--jurfi-accent);
+    outline: 1px solid var(--accent);
   }
 
-  @media (--jurfi-compact) {
-    padding: var(--jurfi-space-2);
+  @media (--compact) {
+    padding: var(--space-2);
   }
 }

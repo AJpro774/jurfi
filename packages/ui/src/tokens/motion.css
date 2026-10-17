@@ -1,0 +1,25 @@
+:root {
+  --dur-fast: 90ms;
+  --dur-med: 160ms;
+  --dur-slow: 260ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: linear(
+    0, 0.009, 0.035 2.1%, 0.141 4.4%, 0.723 12.9%, 0.938 16.7%, 1.017 19.4%,
+    1.077 22.4%, 1.121 25.8%, 1.149 29.5%, 1.159 34.3%, 1.134 40.8%,
+    1.037 55.2%, 1.003 63%, 0.992 72%, 1
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0ms;
+    --dur-med: 0ms;
+    --dur-slow: 0ms;
+  }
+}
+
+[data-motion='off'] {
+  --dur-fast: 0ms;
+  --dur-med: 0ms;
+  --dur-slow: 0ms;
+}

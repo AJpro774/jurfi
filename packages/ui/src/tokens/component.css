@@ -1,0 +1,26 @@
+:root {
+  --btn-h: var(--density-row-h);
+  --btn-px: var(--space-3);
+  --btn-radius: var(--ref-radius-2);
+  --btn-bg: var(--surface-3);
+  --btn-fg: var(--text-1);
+  --btn-border: var(--border-strong);
+  --btn-bg-primary: var(--accent);
+  --btn-fg-primary: var(--accent-contrast);
+  --btn-font: var(--ref-font-size-3) / var(--ref-font-lh-tight) var(--ref-font-sans);
+  --panel-bg: var(--surface-1);
+  --panel-header-bg: var(--surface-2);
+  --panel-header-h: calc(var(--density-row-h) + var(--space-1));
+  --panel-fg: var(--text-1);
+  --panel-border: var(--border-subtle);
+  --panel-radius: var(--ref-radius-0);
+  --panel-pad: var(--space-3);
+  --field-h: var(--density-row-h);
+  --field-bg: var(--surface-0);
+  --field-fg: var(--text-1);
+  --field-border: var(--border-strong);
+  --field-radius: var(--ref-radius-2);
+  --field-px: var(--space-2);
+  --field-border-focus: var(--focus-ring);
+  --field-border-invalid: var(--danger);
+}

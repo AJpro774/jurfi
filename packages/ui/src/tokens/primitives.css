@@ -1,0 +1,84 @@
+:root {
+  /* Gray ramp: 0 = darkest, 1000 = lightest */
+  --ref-gray-0: #0e0f11;
+  --ref-gray-50: #181a1e;
+  --ref-gray-100: #23252b;
+  --ref-gray-125: #282b32;
+  --ref-gray-150: #2d3038;
+  --ref-gray-175: #343741;
+  --ref-gray-200: #383b44;
+  --ref-gray-250: #434651;
+  --ref-gray-300: #4d515e;
+  --ref-gray-350: #585d6b;
+  --ref-gray-400: #626878;
+  --ref-gray-450: #6d7385;
+  --ref-gray-500: #787e91;
+  --ref-gray-550: #858b9b;
+  --ref-gray-600: #9297a6;
+  --ref-gray-650: #9fa3b1;
+  --ref-gray-675: #a3a8b6;
+  --ref-gray-700: #acb0bb;
+  --ref-gray-750: #b9bcc6;
+  --ref-gray-800: #c6c8d0;
+  --ref-gray-850: #d3d5db;
+  --ref-gray-900: #e0e1e5;
+  --ref-gray-925: #e6e7ea;
+  --ref-gray-950: #ecedf0;
+  --ref-gray-975: #f3f4f6;
+  --ref-gray-1000: #f9fafa;
+
+  /* Accent ramp */
+  --ref-accent-50: #eaf2ff;
+  --ref-accent-100: #d3e3ff;
+  --ref-accent-200: #a9c8ff;
+  --ref-accent-300: #7fabff;
+  --ref-accent-400: #5a92ff;
+  --ref-accent-500: #3b7bf5;
+  --ref-accent-600: #2c62d1;
+  --ref-accent-700: #244ea6;
+  --ref-accent-800: #1d3d80;
+  --ref-accent-900: #162e5e;
+
+  /* Status */
+  --ref-red-500: #e5484d;
+  --ref-red-300: #ff8589;
+  --ref-red-700: #b4232a;
+  --ref-white: #fff;
+  --ref-black: #000;
+  --ref-yellow-400: #ffd60a;
+
+  /* Space (4px base) */
+  --ref-space-1: 4px;
+  --ref-space-2: 8px;
+  --ref-space-3: 12px;
+  --ref-space-4: 16px;
+  --ref-space-5: 20px;
+  --ref-space-6: 24px;
+  --ref-space-7: 28px;
+  --ref-space-8: 32px;
+  --ref-space-9: 36px;
+  --ref-space-10: 40px;
+  --ref-space-11: 44px;
+  --ref-space-12: 48px;
+
+  /* Radius */
+  --ref-radius-0: 0;
+  --ref-radius-1: 2px;
+  --ref-radius-2: 4px;
+  --ref-radius-3: 6px;
+  --ref-radius-4: 10px;
+  --ref-radius-full: 999px;
+
+  /* Font */
+  --ref-font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --ref-font-mono: ui-monospace, "SF Mono", menlo, consolas, monospace;
+  --ref-font-size-1: 11px;
+  --ref-font-size-2: 12px;
+  --ref-font-size-3: 13px;
+  --ref-font-size-4: 15px;
+  --ref-font-weight-regular: 400;
+  --ref-font-weight-medium: 500;
+  --ref-font-weight-bold: 600;
+  --ref-font-lh-tight: 1.25;
+  --ref-font-lh-normal: 1.5;
+}
