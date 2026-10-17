@@ -33,11 +33,25 @@ const freezeRaf = (): void => {
 /** Load marble (?test=1 forces webgl2), then start + advance in ONE evaluate so no rAF frame can interleave; return the game state. */
 async function loadAndRun(page: Page, steps: number): Promise<string> {
   const errs = collectErrors(page);
+  // Also keep console warnings + page errors from the very start, to explain a boot failure (e.g. no WebGL2).
+  const diag: string[] = [];
+  page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') diag.push(`console.${m.type()}: ${m.text()}`); });
+  page.on('pageerror', (e) => diag.push(`pageerror: ${e.message}`));
   await page.addInitScript(seedScript, SEED);
   await page.addInitScript(freezeRaf);
   await page.goto('/marble/?test=1', { waitUntil: 'load' });
   await page.waitForSelector('#game', { state: 'visible' });
-  await page.waitForFunction(() => !!window.__marble, undefined, { timeout: 15_000 });
+  try {
+    await page.waitForFunction(() => !!window.__marble, undefined, { timeout: 15_000 });
+  } catch (e) {
+    const ua = await page.evaluate(() => navigator.userAgent).catch(() => '(unavailable)');
+    const gl2 = await page.evaluate(() => document.createElement('canvas').getContext('webgl2') !== null).catch(() => 'unknown');
+    throw new Error(
+      `window.__marble never appeared: ${(e as Error).message.split('\n')[0]}\n` +
+      `userAgent: ${ua}\nWebGL2 context creatable: ${String(gl2)}\n` +
+      `collected console/page errors (${diag.length}):\n${diag.join('\n') || '(none)'}`,
+    );
+  }
   const state = await page.evaluate((n) => {
     window.__marble.start();
     window.__marble.advance(n);
