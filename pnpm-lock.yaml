@@ -261,6 +261,9 @@ importers:
       '@jurfi/render':
         specifier: workspace:*
         version: link:../render
+      '@jurfi/script':
+        specifier: workspace:*
+        version: link:../script
       '@jurfi/ui':
         specifier: workspace:*
         version: link:../ui
