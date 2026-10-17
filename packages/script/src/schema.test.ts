@@ -128,10 +128,11 @@ describe('node registry', () => {
 });
 
 describe('core adapter gap', () => {
-  it('records the missing ECS surface', () => {
+  it('records the ECS surface Play mode uses', () => {
     expect(coreGaps.package).toBe('@jurfi/core');
     expect(coreGaps.present).toContain('clamp');
-    expect(coreGaps.adapter).toBe('ScriptWorld');
-    expect(coreGaps.missing.length).toBeGreaterThan(0);
+    expect(coreGaps.present).toContain('createScriptWorld');
+    expect(coreGaps.adapter).toBe('createScriptWorld');
+    expect(coreGaps.missing).toEqual([]);
   });
 });

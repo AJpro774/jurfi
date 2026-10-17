@@ -1,4 +1,4 @@
-import type { Disposable } from '@jurfi/core';
+import { createScriptWorld, createWorld, type Disposable } from '@jurfi/core';
 import { compile } from './compile';
 import { faultMessage, NODE_FAULT_CAP, type NodeFault } from './fault';
 import type { ExecHost } from './handlers';
@@ -8,7 +8,6 @@ import type { NodeRegistry } from './registry';
 import type { GraphDoc, VariableScope } from './schema';
 import { createBuiltinRegistry } from './builtins';
 import type { EntityRef, ScriptWorld } from './world';
-import { createMemoryWorld } from './world';
 
 export type DebugPhase = 'enter' | 'exit';
 
@@ -46,7 +45,7 @@ export class ScriptRuntimeError extends Error {
 }
 
 export interface ScriptRuntimeOptions {
-  /** Scene adapter. Defaults to an in-memory world with `self.id === 'self'`. */
+  /** Scene adapter. Defaults to `createScriptWorld(createWorld())`. */
   world?: ScriptWorld;
   /** Defaults to the built-in script registry. */
   registry?: NodeRegistry;
@@ -170,7 +169,7 @@ class Engine implements ExecHost, ScriptRuntime {
   private depth = 0;
 
   constructor(options: ScriptRuntimeOptions = {}) {
-    this.world = options.world ?? createMemoryWorld();
+    this.world = options.world ?? createScriptWorld(createWorld());
     this.registry = options.registry ?? createBuiltinRegistry();
     this.onNodeError = options.onNodeError;
     const requested = options.maxSteps;

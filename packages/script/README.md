@@ -50,7 +50,7 @@ if (result.ok) {
 }
 ```
 
-`world` implements `ScriptWorld`. `tick` uses simulated time and does nothing while paused or stopped. `start()` clears graph-scoped variables and the runtime’s fallback entity-variable table.
+`world` implements `ScriptWorld`. Omitting it uses `createScriptWorld(createWorld())` from `@jurfi/core`, with a fresh entity as `self`. `tick` uses simulated time and does nothing while paused or stopped. `start()` clears graph-scoped variables and the runtime’s fallback entity-variable table. Variables stored by the ECS are left alone.
 
 `reload(doc)` recompiles and swaps the program. Graph variables and entity variables stay. The in-flight stack, delays, and pause are dropped, and OnStart does not run again. If the compile fails, the previous program and variables stay.
 
@@ -104,15 +104,10 @@ A type that is registered but has no script handler compiles with an `unimplemen
 
 Loops are structured inside ForLoop and While, so a cycle of exec edges is a compile error. Each `start` / `tick` / `emit` / `resume` records a `max-steps` fault (default 100000) and ends that turn. The session stays running.
 
-## Gap: `@jurfi/core` has no ECS
+## ECS
 
-`@jurfi/core` still exports `VERSION`, `Disposable`, and `clamp` only. There is no entity storage to wire up, so `ScriptWorld` remains the adapter. `createScriptRuntime` implements `Disposable`. `core/Clamp` uses `clamp`.
+`createScriptRuntime` implements `Disposable` from `@jurfi/core`. `core/Clamp` uses `clamp`. Components, fields, and per-entity variables go through `createScriptWorld`. `coreGaps.missing` is empty.
 
-Everything about entities is the `ScriptWorld` adapter (`coreGaps` lists the missing surface):
+`World` can also spawn, destroy, remove components, and query. Visual scripts have no nodes for those yet.
 
-- entity id and storage
-- component get / set / has
-- component field get / set
-- per-entity variable storage
-
-`createMemoryWorld` is a test stand-in, not the engine world. If `getField` / `setField` or `getVariable` / `setVariable` are omitted, the runtime falls back to component-object fields and a side table keyed by `entity.id`. World-backed entity variables are not cleared by `start()`, so an ECS adapter can own that data.
+`createMemoryWorld` is only a test stand-in. If `getField` / `setField` or `getVariable` / `setVariable` are omitted on a custom world, the runtime falls back to component-object fields and a side table keyed by `entity.id`. World-backed entity variables are not cleared by `start()` or `reload`.

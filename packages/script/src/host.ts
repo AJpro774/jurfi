@@ -1,9 +1,10 @@
+import { createScriptWorld, createWorld } from '@jurfi/core';
 import type { CompiledProgram } from './ir';
 import { faultMessage, NODE_FAULT_CAP, type NodeFault } from './fault';
 import { callDefinedRun, callDefinedValue, type ScriptCall } from './scripts';
 import type { VariableScope } from './schema';
 import { valuesEqual } from './util';
-import { createMemoryWorld, type EntityRef, type ScriptWorld } from './world';
+import type { EntityRef, ScriptWorld } from './world';
 
 export { defineScript } from './scripts';
 export type { DefineScriptOptions, DefinedScript, ScriptNodeContext } from './scripts';
@@ -14,6 +15,7 @@ export interface HostBindings {
 }
 
 export interface ScriptHostOptions {
+  /** Scene adapter. Defaults to `createScriptWorld(createWorld())`. */
   world?: ScriptWorld;
   maxSteps?: number;
   onNodeError?: (fault: NodeFault) => void;
@@ -109,7 +111,7 @@ class CompiledHost implements ScriptHost {
   private steps = 0;
 
   constructor(options: ScriptHostOptions = {}) {
-    this.world = options.world ?? createMemoryWorld();
+    this.world = options.world ?? createScriptWorld(createWorld());
     this.onNodeError = options.onNodeError;
     const requested = options.maxSteps;
     this.maxSteps =
