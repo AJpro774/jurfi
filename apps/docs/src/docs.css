@@ -1,0 +1,114 @@
+body {
+  margin: 0;
+  background: var(--surface-0);
+  color: var(--text-1);
+  font-family: var(--ref-font-sans);
+}
+
+.docs-shell {
+  display: grid;
+  grid-template-columns: 16rem 1fr;
+  min-height: 100vh;
+}
+
+.docs-nav {
+  background: var(--surface-1);
+  border-right: 1px solid var(--border-subtle);
+  padding: var(--space-4);
+}
+
+.docs-nav ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.docs-main a {
+  color: var(--accent);
+}
+
+.docs-nav a {
+  display: block;
+  padding: var(--space-2);
+  color: var(--text-2);
+  text-decoration: none;
+  border-radius: var(--ref-radius-2);
+}
+
+.docs-main a:focus-visible {
+  outline: 2px solid var(--focus-ring);
+}
+
+.docs-nav a:hover {
+  color: var(--text-1);
+  background: var(--surface-2);
+}
+
+.docs-nav a[aria-current="page"] {
+  color: var(--accent-contrast);
+  background: var(--accent);
+}
+
+.docs-nav a:focus-visible {
+  outline: 2px solid var(--focus-ring);
+}
+
+.docs-brand {
+  font-weight: 700;
+  color: var(--text-1) !important;
+  margin-block-end: var(--space-3);
+}
+
+.docs-main {
+  max-width: 52rem;
+  padding: var(--space-5);
+  line-height: 1.6;
+}
+
+.docs-main pre {
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  padding: var(--space-3);
+  overflow-x: auto;
+  border-radius: var(--ref-radius-3);
+}
+
+.docs-main code {
+  font-family: var(--ref-font-mono);
+  background: var(--surface-2);
+  padding: 0 var(--space-1);
+  border-radius: var(--ref-radius-1);
+}
+
+.docs-main pre code {
+  background: none;
+  padding: 0;
+}
+
+.docs-main table {
+  border-collapse: collapse;
+}
+
+.docs-main th,
+.docs-main td {
+  border: 1px solid var(--border-subtle);
+  padding: var(--space-1) var(--space-2);
+}
+
+.docs-main blockquote {
+  margin-inline: 0;
+  padding-inline-start: var(--space-3);
+  border-inline-start: 3px solid var(--border-strong);
+  color: var(--text-2);
+}
+
+@media (width <= 600px) {
+  .docs-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .docs-nav {
+    border-right: 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+}

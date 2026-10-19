@@ -49,14 +49,14 @@ Browser defaults: `preventDefaultKeys: true` makes `Input` call `preventDefault(
 
 ## 5. Fixed loop and profiling
 
-`main.ts` runs a 1/60 s accumulator. `@jurfi/perf` has no clock or RNG, so the fixed clock and seeded RNG live in `pong/clock.ts`. A `Profiler` from `@jurfi/perf` times the `update` and `draw` systems each frame (`perf.beginFrame()`, `perf.begin/end(system)`, `perf.endFrame()`); inspect it with `perf.dump()` or `perf.checkBudgets()`.
+`main.ts` uses the shared fixed-step clock and seeded RNG from `@jurfi/perf`: `createClock({ fixedStepMs: 1000 / 60, maxCatchUp: 15 })` for real time (each frame `clock.tick(realMs)`, then `while (clock.step()) update()`; `clock.alpha` is the interpolation fraction), `createTestClock(1000 / 60)` under `?test=1` (time moves only via `advance(n)`), and `createRng(seed)` (PCG32: `next()`, `int(min, max)` with max exclusive, `pick(arr)`, `fork(label)`, and a hex `state` you can save and restore). A `Profiler` from `@jurfi/perf` times the `update` and `draw` systems each frame (`perf.beginFrame()`, `perf.begin/end(system)`, `perf.endFrame()`); inspect it with `perf.dump()` or `perf.checkBudgets()`.
 
 ## 6. Test mode
 
 Open `/pong/?test=1`:
 
 - Fixed clock: exactly one 1/60 s step per frame, no wall time.
-- Fixed random seed (1337).
+- Fixed random seed (`createRng(1337)`; the sequence is PCG32, not the mulberry32 of earlier versions). `__pong.start()` resets the frame counters, so the state after `start()` + `advance(n)` in one `page.evaluate` is identical on every load.
 - Audio muted: `AudioEngine` is created with `muted: true` (its master bus is silent).
 - `window.__pong.advance(n)` steps the game deterministically (calling `input.update()` each step) and `__pong.start()` serves. `__pong.perf` exposes the profiler.
 

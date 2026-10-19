@@ -2,6 +2,14 @@ import { Transform } from './components';
 import { EntityPool, entityIndex, isEntityId, packEntity, type Entity } from './entity';
 import { EcsError } from './errors';
 import { WorldEventBus, type WorldEventMap, type WorldEventName } from './events';
+import {
+  ChangeLog,
+  copyPatchValue,
+  type EntitySnapshot,
+  type WorldChange,
+  type WorldPatch,
+} from './history';
+import { migrateScene } from './migrate';
 import { buildRenderScene, composeTrs, type RenderInput, type RenderScene } from './render-scene';
 import {
   coerceComponentData,
@@ -18,7 +26,6 @@ import {
   writeJsonPath,
   type ComponentStore,
 } from './storage';
-import { migrateScene } from './migrate';
 import { WorldClock } from './time';
 
 export const SCENE_VERSION = 1 as const;
@@ -106,6 +113,7 @@ export class World {
   private matrixDirty = new Uint8Array(0);
   private readonly listeners = new Set<() => void>();
   private readonly plugins = new Set<string>();
+  private readonly history = new ChangeLog();
   private notifyDepth = 0;
   private notifyPending = false;
   private disposed = false;
@@ -117,6 +125,7 @@ export class World {
     this.names[index] = '';
     this.parentOf[index] = -1;
     this.markMatrixDirty(index);
+    this.note('create', { op: 'create', entity }, { op: 'release', entity });
     this.events.emit('created', { entity });
     this.touch();
     return entity;
@@ -125,29 +134,11 @@ export class World {
   destroy(entity: Entity): void {
     this.assertOpen();
     if (!this.pool.isAlive(entity)) return;
-    const index = entityIndex(entity);
-    const parent = this.parentOf[index] ?? -1;
-    const kids = [...(this.children.get(index) ?? [])];
-    for (const child of kids) {
-      this.unlink(child);
-      if (parent >= 0) {
-        this.parentOf[child] = parent;
-        this.link(parent, child);
-      } else {
-        this.parentOf[child] = -1;
-      }
-      this.markMatrixDirty(child);
+    const snapshot = this.history.capturing ? this.snapshotEntity(entity) : undefined;
+    this.detach(entity, 'bump');
+    if (snapshot) {
+      this.note('destroy', { op: 'destroy', entity }, { op: 'restore', snapshot });
     }
-    this.children.delete(index);
-    this.unlink(index);
-    this.parentOf[index] = -1;
-    this.names[index] = '';
-    this.vars[index] = undefined;
-    this.json.deleteEntity(index);
-    for (const store of this.stores.values()) store.delete(index);
-    this.clearAlias(index);
-    if (index < this.matrixDirty.length) this.matrixDirty[index] = 0;
-    this.pool.destroy(entity);
     this.events.emit('destroyed', { entity });
     this.touch();
   }
@@ -178,6 +169,8 @@ export class World {
         throw new EcsError('duplicate-component', `Entity ${entity} already has "${id}"`);
       }
       this.json.set(index, id, value === undefined ? {} : value);
+      const stored = this.json.get(index, id);
+      this.note('add', { op: 'add', entity, component: id, value: stored }, { op: 'remove', entity, component: id });
       this.events.emit('added', { entity, component: id });
       this.touch();
       return;
@@ -188,6 +181,12 @@ export class World {
     }
     store.write(index, coerceComponentData(model, value));
     if (model.id === Transform.id) this.markMatrixDirty(index);
+    const stored = store.read(index);
+    this.note(
+      `add ${model.id}`,
+      { op: 'add', entity, component: model.id, value: stored },
+      { op: 'remove', entity, component: model.id },
+    );
     this.events.emit('added', { entity, component: model.id });
     this.touch();
   }
@@ -202,15 +201,21 @@ export class World {
     const id = componentId(component);
     if (!model) {
       const existed = this.json.has(index, id);
+      const previous = existed ? this.json.get(index, id) : undefined;
       this.json.set(index, id, value);
+      const stored = this.json.get(index, id);
+      this.noteComponentWrite(entity, id, existed, previous, stored);
       this.events.emit(existed ? 'changed' : 'added', { entity, component: id });
       this.touch();
       return;
     }
     const store = this.storeFor(model.id, model);
     const existed = store.has(index);
+    const previous = existed ? store.read(index) : undefined;
     store.write(index, coerceComponentData(model, value));
     if (model.id === Transform.id) this.markMatrixDirty(index);
+    const stored = store.read(index);
+    this.noteComponentWrite(entity, model.id, existed, previous, stored);
     this.events.emit(existed ? 'changed' : 'added', { entity, component: model.id });
     this.touch();
   }
@@ -238,9 +243,15 @@ export class World {
     const index = entityIndex(entity);
     const model = componentModel(component);
     const id = componentId(component);
+    const previous = this.get(entity, id);
     const removed = model ? this.storeFor(model.id, model).delete(index) : this.json.delete(index, id);
     if (!removed) return;
     if (id === Transform.id) this.markMatrixDirty(index);
+    this.note(
+      `remove ${id}`,
+      { op: 'remove', entity, component: id },
+      { op: 'add', entity, component: id, value: previous },
+    );
     this.events.emit('removed', { entity, component: id });
     this.touch();
   }
@@ -274,8 +285,15 @@ export class World {
     const id = componentId(component);
     if (!model) {
       const existed = this.json.has(index, id);
-      const next = writeJsonPath(existed ? this.json.get(index, id) : {}, path, cloneJson(value));
+      const previous = existed ? this.json.get(index, id) : undefined;
+      const next = writeJsonPath(existed ? previous : {}, path, cloneJson(value));
       this.json.set(index, id, next);
+      const stored = copyPatchValue(value);
+      const forward: WorldPatch = { op: 'setField', entity, component: id, field: path, value: stored };
+      const inverse: WorldPatch = existed
+        ? { op: 'set', entity, component: id, value: previous }
+        : { op: 'remove', entity, component: id };
+      this.note(`setField ${id}.${path}`, forward, inverse);
       this.events.emit(existed ? 'changed' : 'added', { entity, component: id, field: path });
       this.touch();
       return;
@@ -284,9 +302,11 @@ export class World {
     const resolved = resolveFieldPath(model, path);
     const checked = validateFieldWrite(model, resolved, value);
     const existed = store.has(index);
+    const previous = existed ? store.readPath(index, resolved) : undefined;
     if (!existed) store.write(index, coerceComponentData(model, undefined));
     store.writePath(index, resolved, checked);
     if (model.id === Transform.id) this.markMatrixDirty(index);
+    this.noteFieldWrite(entity, model.id, path, existed, previous, checked);
     this.events.emit(existed ? 'changed' : 'added', { entity, component: model.id, field: path });
     this.touch();
   }
@@ -316,13 +336,43 @@ export class World {
     }
     const index = entityIndex(entity);
     let bucket = this.vars[index];
+    const had = bucket?.has(name) ?? false;
+    const previous = had ? cloneJson(bucket?.get(name)) : undefined;
     if (!bucket) {
       bucket = new Map();
       this.vars[index] = bucket;
     }
-    if (value === undefined) bucket.delete(name);
-    else bucket.set(name, cloneJson(value));
+    if (value === undefined) {
+      bucket.delete(name);
+      if (had) {
+        this.note(
+          `deleteVariable ${name}`,
+          { op: 'deleteVariable', entity, name },
+          { op: 'setVariable', entity, name, value: previous },
+        );
+      }
+    } else {
+      const stored = cloneJson(value);
+      bucket.set(name, stored);
+      this.note(
+        `setVariable ${name}`,
+        { op: 'setVariable', entity, name, value: copyPatchValue(stored) },
+        had
+          ? { op: 'setVariable', entity, name, value: previous }
+          : { op: 'deleteVariable', entity, name },
+      );
+    }
     this.touch();
+  }
+
+  /** JSON copy of every variable on `entity`. Dead entities return an empty object. */
+  getVariables(entity: Entity): Record<string, unknown> {
+    if (!this.pool.isAlive(entity)) return {};
+    const bucket = this.vars[entityIndex(entity)];
+    if (!bucket) return {};
+    const out: Record<string, unknown> = {};
+    for (const [name, value] of bucket) out[name] = cloneJson(value);
+    return out;
   }
 
   hasVariable(entity: Entity, name: string): boolean {
@@ -332,7 +382,17 @@ export class World {
 
   deleteVariable(entity: Entity, name: string): void {
     this.assertAlive(entity);
-    this.vars[entityIndex(entity)]?.delete(name);
+    const bucket = this.vars[entityIndex(entity)];
+    const had = bucket?.has(name) ?? false;
+    const previous = had ? cloneJson(bucket?.get(name)) : undefined;
+    bucket?.delete(name);
+    if (had) {
+      this.note(
+        `deleteVariable ${name}`,
+        { op: 'deleteVariable', entity, name },
+        { op: 'setVariable', entity, name, value: previous },
+      );
+    }
     this.touch();
   }
 
@@ -344,7 +404,11 @@ export class World {
   setName(entity: Entity, name: string): void {
     this.assertAlive(entity);
     if (typeof name !== 'string') throw new EcsError('invalid-value', 'Entity name must be a string');
+    const previous = this.names[entityIndex(entity)] ?? '';
     this.names[entityIndex(entity)] = name;
+    if (previous !== name) {
+      this.note('setName', { op: 'setName', entity, name }, { op: 'setName', entity, name: previous });
+    }
     this.touch();
   }
 
@@ -358,10 +422,14 @@ export class World {
   setParent(entity: Entity, parent: Entity | null): void {
     this.assertAlive(entity);
     const index = entityIndex(entity);
+    const previous = this.getParent(entity);
     if (parent === null) {
       this.unlink(index);
       this.parentOf[index] = -1;
       this.markMatrixDirty(index);
+      if (previous !== null) {
+        this.note('setParent', { op: 'setParent', entity, parent: null }, { op: 'setParent', entity, parent: previous });
+      }
       this.touch();
       return;
     }
@@ -376,6 +444,9 @@ export class World {
     this.parentOf[index] = parentIndex;
     this.link(parentIndex, index);
     this.markMatrixDirty(index);
+    if (previous !== parent) {
+      this.note('setParent', { op: 'setParent', entity, parent }, { op: 'setParent', entity, parent: previous });
+    }
     this.touch();
   }
 
@@ -473,6 +544,9 @@ export class World {
 
   loadScene(scene: SceneJson): void {
     this.assertOpen();
+    if (this.history.openDepth > 0) {
+      throw new EcsError('invalid-value', 'Cannot load a scene inside a transaction');
+    }
     const migrated = migrateScene(scene, SCENE_VERSION);
     scene = migrated;
     if (!Array.isArray(scene.entities)) {
@@ -485,27 +559,33 @@ export class World {
       }
       live.push(row.id);
     }
-    this.batch(() => {
-      this.resetStorage();
-      this.pool.load(live, scene.generations);
-      for (const row of scene.entities) {
-        const entity = row.id;
-        this.names[entityIndex(entity)] = typeof row.name === 'string' ? row.name : '';
-        const components = row.components ?? {};
-        if (!isRecord(components)) throw new EcsError('invalid-scene', `Entity ${entity} components must be an object`);
-        for (const [key, value] of Object.entries(components)) this.set(entity, key, value);
-        const variables = row.variables ?? {};
-        if (!isRecord(variables)) throw new EcsError('invalid-scene', `Entity ${entity} variables must be an object`);
-        for (const [name, value] of Object.entries(variables)) this.setVariable(entity, name, value);
-      }
-      for (const row of scene.entities) {
-        if (row.parent === null || row.parent === undefined) continue;
-        if (!this.pool.isAlive(row.parent)) {
-          throw new EcsError('invalid-scene', `Entity ${row.id} parent ${String(row.parent)} is not in the scene`);
+    this.history.clear();
+    this.history.suspended = true;
+    try {
+      this.batch(() => {
+        this.resetStorage();
+        this.pool.load(live, scene.generations);
+        for (const row of scene.entities) {
+          const entity = row.id;
+          this.names[entityIndex(entity)] = typeof row.name === 'string' ? row.name : '';
+          const components = row.components ?? {};
+          if (!isRecord(components)) throw new EcsError('invalid-scene', `Entity ${entity} components must be an object`);
+          for (const [key, value] of Object.entries(components)) this.set(entity, key, value);
+          const variables = row.variables ?? {};
+          if (!isRecord(variables)) throw new EcsError('invalid-scene', `Entity ${entity} variables must be an object`);
+          for (const [name, value] of Object.entries(variables)) this.setVariable(entity, name, value);
         }
-        this.setParent(row.id, row.parent);
-      }
-    });
+        for (const row of scene.entities) {
+          if (row.parent === null || row.parent === undefined) continue;
+          if (!this.pool.isAlive(row.parent)) {
+            throw new EcsError('invalid-scene', `Entity ${row.id} parent ${String(row.parent)} is not in the scene`);
+          }
+          this.setParent(row.id, row.parent);
+        }
+      });
+    } finally {
+      this.history.suspended = false;
+    }
   }
 
   subscribe(listener: () => void): () => void {
@@ -529,15 +609,255 @@ export class World {
     }
   }
 
+  /**
+   * Group every edit inside `fn` into one undo step.
+   * Nested transactions join the outer step. A throw rolls the open step back.
+   */
+  transaction<T>(fn: () => T): T;
+  transaction<T>(label: string, fn: () => T): T;
+  transaction<T>(labelOrFn: string | (() => T), maybeFn?: () => T): T {
+    this.assertOpen();
+    const label = typeof labelOrFn === 'string' ? labelOrFn : 'transaction';
+    const fn = typeof labelOrFn === 'function' ? labelOrFn : maybeFn;
+    if (!fn) throw new EcsError('invalid-value', 'transaction requires a function');
+    const root = this.history.openDepth === 0;
+    this.history.begin(label);
+    return this.batch(() => {
+      try {
+        const value = fn();
+        this.history.end();
+        return value;
+      } catch (error) {
+        if (root) this.history.rollback((patch) => this.applyPatch(patch));
+        throw error;
+      }
+    });
+  }
+
+  /** Revert the latest history step. Returns false when the undo stack is empty. */
+  undo(): boolean {
+    this.assertOpen();
+    if (this.history.openDepth > 0) {
+      throw new EcsError('invalid-value', 'Cannot undo or redo while a transaction is open');
+    }
+    if (!this.history.canUndo()) return false;
+    return this.batch(() => this.history.undo((patch) => this.applyPatch(patch)));
+  }
+
+  /** Reapply the latest undone step. Returns false when the redo stack is empty. */
+  redo(): boolean {
+    this.assertOpen();
+    if (this.history.openDepth > 0) {
+      throw new EcsError('invalid-value', 'Cannot undo or redo while a transaction is open');
+    }
+    if (!this.history.canRedo()) return false;
+    return this.batch(() => this.history.redo((patch) => this.applyPatch(patch)));
+  }
+
+  canUndo(): boolean {
+    return this.history.canUndo();
+  }
+
+  canRedo(): boolean {
+    return this.history.canRedo();
+  }
+
+  /** Drop undo and redo. Scene loads do this because they replace entity storage. */
+  clearHistory(): void {
+    this.history.clear();
+  }
+
+  /**
+   * One stream for committed edits, undos, and redos.
+   * Autosave can listen here instead of diffing the world after every call.
+   */
+  onChange(listener: (change: WorldChange) => void): () => void {
+    return this.history.onChange(listener);
+  }
+
   on<K extends WorldEventName>(type: K, listener: (event: WorldEventMap[K]) => void): () => void {
     return this.events.on(type, listener);
   }
 
   dispose(): void {
     if (this.disposed) return;
+    this.history.clear();
     this.resetStorage();
     this.listeners.clear();
     this.disposed = true;
+  }
+
+  private note(label: string, forward: WorldPatch, inverse: WorldPatch): void {
+    this.history.push(label, forward, inverse);
+  }
+
+  private noteComponentWrite(
+    entity: Entity,
+    component: string,
+    existed: boolean,
+    previous: unknown,
+    stored: unknown,
+  ): void {
+    const forward: WorldPatch = existed
+      ? { op: 'set', entity, component, value: stored }
+      : { op: 'add', entity, component, value: stored };
+    const inverse: WorldPatch = existed
+      ? { op: 'set', entity, component, value: previous }
+      : { op: 'remove', entity, component };
+    this.note(existed ? `set ${component}` : `add ${component}`, forward, inverse);
+  }
+
+  private noteFieldWrite(
+    entity: Entity,
+    component: string,
+    field: string,
+    existed: boolean,
+    previous: unknown,
+    value: unknown,
+  ): void {
+    const stored = copyPatchValue(value);
+    const forward: WorldPatch = { op: 'setField', entity, component, field, value: stored };
+    const inverse: WorldPatch = existed
+      ? { op: 'setField', entity, component, field, value: copyPatchValue(previous) }
+      : { op: 'remove', entity, component };
+    this.note(`setField ${component}.${field}`, forward, inverse);
+  }
+
+  private snapshotEntity(entity: Entity): EntitySnapshot {
+    const index = entityIndex(entity);
+    const components: Record<string, unknown> = {};
+    for (const key of this.componentKeys(entity)) components[key] = this.get(entity, key);
+    const variables: Record<string, unknown> = {};
+    const bucket = this.vars[index];
+    if (bucket) {
+      for (const [name, value] of bucket) variables[name] = cloneJson(value);
+    }
+    const children: Entity[] = [];
+    for (const child of this.children.get(index) ?? []) {
+      const packed = this.entityAt(child);
+      if (packed !== undefined) children.push(packed);
+    }
+    const alias = this.alias(entity);
+    return {
+      entity,
+      name: this.names[index] ?? '',
+      parent: this.getParent(entity),
+      ...(alias ? { alias } : {}),
+      variables,
+      components,
+      children,
+    };
+  }
+
+  /** Drop `entity`. `bump` burns the generation; `keep` leaves it so the id can be adopted. */
+  private detach(entity: Entity, generation: 'bump' | 'keep'): void {
+    const index = entityIndex(entity);
+    const parent = this.parentOf[index] ?? -1;
+    const kids = [...(this.children.get(index) ?? [])];
+    for (const child of kids) {
+      this.unlink(child);
+      if (parent >= 0) {
+        this.parentOf[child] = parent;
+        this.link(parent, child);
+      } else {
+        this.parentOf[child] = -1;
+      }
+      this.markMatrixDirty(child);
+    }
+    this.children.delete(index);
+    this.unlink(index);
+    this.parentOf[index] = -1;
+    this.names[index] = '';
+    this.vars[index] = undefined;
+    this.json.deleteEntity(index);
+    for (const store of this.stores.values()) store.delete(index);
+    this.clearAlias(index);
+    if (index < this.matrixDirty.length) this.matrixDirty[index] = 0;
+    if (generation === 'bump') this.pool.destroy(entity);
+    else this.pool.release(entity);
+  }
+
+  private recreate(entity: Entity): void {
+    this.pool.adopt(entity);
+    const index = entityIndex(entity);
+    this.names[index] = '';
+    this.parentOf[index] = -1;
+    this.markMatrixDirty(index);
+    this.events.emit('created', { entity });
+    this.touch();
+  }
+
+  private forget(entity: Entity): void {
+    if (!this.pool.isAlive(entity)) return;
+    this.detach(entity, 'keep');
+    this.events.emit('destroyed', { entity });
+    this.touch();
+  }
+
+  private restore(snapshot: EntitySnapshot): void {
+    const entity = snapshot.entity;
+    this.pool.adopt(entity);
+    const index = entityIndex(entity);
+    this.names[index] = snapshot.name;
+    this.parentOf[index] = -1;
+    this.markMatrixDirty(index);
+    this.events.emit('created', { entity });
+    if (snapshot.alias) this.setAlias(entity, snapshot.alias);
+    for (const [key, value] of Object.entries(snapshot.components)) this.set(entity, key, value);
+    for (const [name, value] of Object.entries(snapshot.variables)) this.setVariable(entity, name, value);
+    if (snapshot.parent !== null) this.setParent(entity, snapshot.parent);
+    for (const child of snapshot.children) {
+      if (this.pool.isAlive(child)) this.setParent(child, entity);
+    }
+    this.touch();
+  }
+
+  private applyPatch(patch: WorldPatch): void {
+    switch (patch.op) {
+      case 'create':
+        this.recreate(patch.entity);
+        return;
+      case 'release':
+        this.forget(patch.entity);
+        return;
+      case 'destroy':
+        if (!this.pool.isAlive(patch.entity)) return;
+        this.detach(patch.entity, 'bump');
+        this.events.emit('destroyed', { entity: patch.entity });
+        this.touch();
+        return;
+      case 'restore':
+        this.restore(patch.snapshot);
+        return;
+      case 'add':
+        this.add(patch.entity, patch.component, patch.value);
+        return;
+      case 'remove':
+        this.remove(patch.entity, patch.component);
+        return;
+      case 'set':
+        this.set(patch.entity, patch.component, patch.value);
+        return;
+      case 'setField':
+        this.setField(patch.entity, patch.component, patch.field, patch.value);
+        return;
+      case 'setVariable':
+        this.setVariable(patch.entity, patch.name, patch.value);
+        return;
+      case 'deleteVariable':
+        this.deleteVariable(patch.entity, patch.name);
+        return;
+      case 'setName':
+        this.setName(patch.entity, patch.name);
+        return;
+      case 'setParent':
+        this.setParent(patch.entity, patch.parent);
+        return;
+      default: {
+        const unreachable: never = patch;
+        throw new EcsError('invalid-value', `Unknown patch ${String(unreachable)}`);
+      }
+    }
   }
 
   private match(names: readonly string[]): Entity[] {

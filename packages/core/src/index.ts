@@ -39,6 +39,7 @@ export { Light, Light2D, Transform } from './components';
 
 export type { WorldEventMap, WorldEventName } from './events';
 export { WorldEventBus } from './events';
+export type { EntitySnapshot, WorldChange, WorldPatch } from './history';
 export type { MigrationFn, PrefabJson, PrefabNode } from './migrate';
 export {
   PREFAB_VERSION,

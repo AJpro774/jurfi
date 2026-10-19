@@ -1,9 +1,8 @@
 /**
  * Entity and component access for visual scripts.
  *
- * `@jurfi/core` does not ship an ECS yet (it exports `VERSION`, `Disposable`, and `clamp`).
- * Play mode should pass a `ScriptWorld` implemented against whatever scene storage it has.
- * `createMemoryWorld` is a standalone stand-in for tests and for Play mode until that lands.
+ * Play mode and the compiled host default to `createScriptWorld(createWorld())` from `@jurfi/core`.
+ * `createMemoryWorld` is a test stand-in with string ids and map storage.
  */
 export interface EntityRef {
   readonly id: string | number;
@@ -26,19 +25,25 @@ export interface ScriptWorld {
 }
 
 /**
- * What visual scripting needed from `@jurfi/core` and did not find.
- * `clamp` is used by the `core/Clamp` node. Everything else goes through `ScriptWorld`.
+ * ECS surface visual scripts use from `@jurfi/core`.
+ * `missing` stays empty while `createScriptWorld` covers components, fields, and entity variables.
+ * Spawn, destroy, remove, and queries exist on `World` and are not script nodes yet.
  */
 export const coreGaps = {
   package: '@jurfi/core',
-  present: ['VERSION', 'Disposable', 'clamp'],
-  missing: [
-    'Entity id type and storage',
-    'World / component get, set, and has',
-    'Component field get and set',
-    'Per-entity variable storage',
+  present: [
+    'VERSION',
+    'Disposable',
+    'clamp',
+    'createWorld',
+    'createScriptWorld',
+    'generational entity ids',
+    'component get, set, and has',
+    'component field get and set',
+    'per-entity JSON variables',
   ],
-  adapter: 'ScriptWorld',
+  missing: [],
+  adapter: 'createScriptWorld',
 } as const;
 
 export interface MemoryWorld extends ScriptWorld {
@@ -51,7 +56,7 @@ export interface MemoryWorld extends ScriptWorld {
   setVariable(entity: EntityRef, name: string, value: unknown): void;
 }
 
-/** In-memory components and entity variables. Not an engine world. */
+/** In-memory components and entity variables for tests. Not the Play-mode world. */
 export function createMemoryWorld(self: EntityRef | string = { id: 'self' }): MemoryWorld {
   const selfRef: EntityRef = typeof self === 'string' ? { id: self } : self;
   const components = new Map<string, Map<string, unknown>>();
