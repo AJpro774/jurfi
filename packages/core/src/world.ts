@@ -474,17 +474,24 @@ export class World {
         throw new EcsError('cycle', `Parenting entity ${entity} to ${parent} would form a cycle`);
       }
     }
-    if (currentParent === parentIndex && options?.index === undefined) return;
+    const previousIndex = this.childPosition(index);
+    const nextIndex = options?.index === undefined ? undefined : clampIndex(options.index, this.siblingCount(parentIndex, index));
+    if (currentParent === parentIndex && (nextIndex === undefined || nextIndex === previousIndex)) return;
     const kept = options?.keepWorldTransform === true ? this.keptLocal(entity, parent) : undefined;
     this.unlink(index);
     this.parentOf[index] = parentIndex;
-    this.insertChild(parentIndex >= 0 ? parentIndex : null, index, options?.index);
+    this.insertChild(parentIndex >= 0 ? parentIndex : null, index, nextIndex);
     this.markMatrixDirty(index);
+    const placed = this.childPosition(index);
     if (kept) this.set(entity, Transform, kept);
-    if (previous !== parent) {
-      this.note('setParent', { op: 'setParent', entity, parent }, { op: 'setParent', entity, parent: previous });
-      this.emitChanged({ entity, kind: 'setParent', parent });
+    if (previous !== parent || previousIndex !== placed) {
+      this.note(
+        'setParent',
+        { op: 'setParent', entity, parent, index: placed },
+        { op: 'setParent', entity, parent: previous, index: previousIndex },
+      );
     }
+    if (previous !== parent) this.emitChanged({ entity, kind: 'setParent', parent });
     this.touch();
   }
 
@@ -501,14 +508,10 @@ export class World {
     return out;
   }
 
-  /** Move `entity` among its current siblings. */
+  /** Move `entity` among its current siblings. The index is applied after the entity is unlinked. */
   setChildIndex(entity: Entity, index: number): void {
     this.assertAlive(entity);
-    const child = entityIndex(entity);
-    const parent = this.parentOf[child] ?? -1;
-    this.unlink(child);
-    this.insertChild(parent >= 0 ? parent : null, child, index);
-    this.touch();
+    this.setParent(entity, this.getParent(entity), { index });
   }
 
   query(...components: ComponentRef[]): Query {
@@ -534,10 +537,17 @@ export class World {
     if (owner !== undefined && owner !== index) {
       throw new EcsError('duplicate-alias', `Alias "${alias}" is already in use`);
     }
-    const previous = this.aliasByIndex[index];
-    if (previous && previous !== alias) this.aliasOf.delete(previous);
+    const previous = this.aliasByIndex[index] || null;
+    if (previous === alias) return;
+    if (previous) this.aliasOf.delete(previous);
     this.aliasOf.set(alias, index);
     this.aliasByIndex[index] = alias;
+    this.note(
+      'setAlias',
+      { op: 'setAlias', entity, alias },
+      { op: 'setAlias', entity, alias: previous },
+    );
+    this.touch();
   }
 
   alias(entity: Entity): string | undefined {
@@ -942,7 +952,11 @@ export class World {
         this.setName(patch.entity, patch.name);
         return;
       case 'setParent':
-        this.setParent(patch.entity, patch.parent);
+        this.setParent(patch.entity, patch.parent, patch.index === undefined ? undefined : { index: patch.index });
+        return;
+      case 'setAlias':
+        if (patch.alias) this.setAlias(patch.entity, patch.alias);
+        else this.clearAlias(entityIndex(patch.entity));
         return;
       default: {
         const unreachable: never = patch;
@@ -1004,6 +1018,21 @@ export class World {
       this.children.set(parent, kids);
     }
     return kids;
+  }
+
+  /** Sibling slot of `index` under its current parent. */
+  private childPosition(index: number): number {
+    const parent = this.parentOf[index] ?? -1;
+    const kids = parent >= 0 ? this.children.get(parent) ?? [] : this.roots;
+    const at = kids.indexOf(index);
+    return at < 0 ? 0 : at;
+  }
+
+  /** How many siblings remain once `moving` is unlinked from `parentIndex`. */
+  private siblingCount(parentIndex: number, moving: number): number {
+    const kids = parentIndex >= 0 ? this.children.get(parentIndex) ?? [] : this.roots;
+    const present = kids.includes(moving) ? 1 : 0;
+    return Math.max(0, kids.length - present);
   }
 
   private unlink(index: number): void {
