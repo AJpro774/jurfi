@@ -1,9 +1,10 @@
 import type { Clip } from '@jurfi/anim';
+import { createEditorWorld } from '@jurfi/core';
 import { createBuiltinRegistry, defineScript, type GraphDoc } from '@jurfi/script';
 import { describe, expect, it } from 'vitest';
 import { createEditorContext } from './context';
 import { createPlaySession } from './play-runtime';
-import { createWorld } from './world';
+import { createWorld, type EditorWorld } from './world';
 
 const boomGraph = (): GraphDoc => ({
   version: 1,
@@ -14,22 +15,50 @@ const boomGraph = (): GraphDoc => ({
   edges: [{ from: { node: 'start', pin: 'then' }, to: { node: 'boom', pin: 'exec' } }],
 });
 
+function positionY(world: EditorWorld, id: string): number {
+  const transform = world.get(id)?.components.Transform;
+  if (typeof transform !== 'object' || transform === null || !('position' in transform)) {
+    throw new Error(`missing Transform on ${id}`);
+  }
+  const position = transform.position;
+  const y = Array.isArray(position) ? position[1] : undefined;
+  if (typeof y !== 'number') throw new Error(`missing position.y on ${id}`);
+  return y;
+}
+
+function fallingWorld(): EditorWorld {
+  const world = createEditorWorld();
+  world.deserialize({
+    entities: [
+      {
+        id: 'ground',
+        name: 'Ground',
+        parentId: null,
+        components: {
+          Transform: { position: [0, -0.5, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+          RigidBody: { type: 'fixed' },
+          Collider: { shape: 'box', halfExtents: [20, 0.5, 20] },
+        },
+      },
+      {
+        id: 'box',
+        name: 'Box',
+        parentId: null,
+        components: {
+          Transform: { position: [0, 2, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+          RigidBody: { type: 'dynamic', mass: 1 },
+          Collider: { shape: 'box', halfExtents: [0.5, 0.5, 0.5], friction: 0.9, restitution: 0 },
+        },
+      },
+    ],
+  });
+  return world;
+}
+
 describe('play runtime', () => {
-  it('samples a clip onto an entity and separates overlapping physics boxes', () => {
+  it('samples a clip onto an entity', async () => {
     const world = createWorld();
     world.add({ id: 'hero', name: 'Hero', parentId: null, components: { transform: { position: { x: 0, y: 0, z: 0 } } } });
-    world.add({
-      id: 'a',
-      name: 'A',
-      parentId: null,
-      components: { physics: { x: 0, y: 0, w: 2, h: 2 } },
-    });
-    world.add({
-      id: 'b',
-      name: 'B',
-      parentId: null,
-      components: { physics: { x: 1, y: 0, w: 2, h: 2 } },
-    });
     const clip: Clip = {
       version: 1,
       id: 'slide',
@@ -50,11 +79,32 @@ describe('play runtime', () => {
       ],
     };
     const session = createPlaySession({ world, clip: () => clip, schedule: () => 0 });
-    session.step(0.5);
+    await session.step(0.5);
     const position = world.get('hero')?.components.transform;
     expect(position).toMatchObject({ position: { x: 5 } });
-    expect(world.get('b')?.components.physics).toMatchObject({ x: 2 });
     session.dispose();
+  });
+
+  it('drops a dynamic body onto fixed ground and stop restores the snapshot', async () => {
+    const world = fallingWorld();
+    const ctx = createEditorContext({ world });
+    expect(positionY(world, 'box')).toBe(2);
+
+    for (let frame = 0; frame < 180; frame += 1) await ctx.step();
+    const landed = positionY(world, 'box');
+    expect(landed).toBeGreaterThan(0.4);
+    expect(landed).toBeLessThan(0.75);
+    expect(positionY(world, 'ground')).toBeCloseTo(-0.5, 5);
+
+    ctx.stop();
+    expect(ctx.getPlayState()).toBe('editing');
+    expect(positionY(world, 'box')).toBeCloseTo(2, 5);
+
+    await ctx.step();
+    expect(positionY(world, 'box')).toBeLessThan(2);
+    ctx.stop();
+    expect(positionY(world, 'box')).toBeCloseTo(2, 5);
+    ctx.dispose();
   });
 
   it('reports a script fault and restores the world on stop', () => {

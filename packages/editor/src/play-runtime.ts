@@ -1,6 +1,6 @@
 import { ClipPlayer, sampleClip, type Clip } from '@jurfi/anim';
-import { createScriptWorld, type World } from '@jurfi/core';
-import { clampPos, overlaps, type Aabb } from '@jurfi/physics';
+import { World, createScriptWorld } from '@jurfi/core';
+import { DEFAULT_FIXED_DT, DEFAULT_GRAVITY, PhysicsWorld } from '@jurfi/physics';
 import {
   createBuiltinRegistry,
   createScriptRuntime,
@@ -31,18 +31,24 @@ export interface PlaySession {
   play(): void;
   pause(): void;
   stop(): void;
-  step(dt?: number): void;
+  step(dt?: number): Promise<void>;
   dispose(): void;
 }
 
-const PHYSICS_KEY = 'physics';
+type PhysicsSim = Awaited<ReturnType<typeof PhysicsWorld.create>>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function coreWorld(world: EditorWorld): World | null {
+  if (!('ecs' in world)) return null;
+  const ecs = (world as { ecs?: unknown }).ecs;
+  return ecs instanceof World ? ecs : null;
+}
+
 function scriptWorldFor(world: EditorWorld): ScriptWorld {
-  const ecs = (world as { ecs?: World }).ecs;
+  const ecs = coreWorld(world);
   if (ecs) return createScriptWorld(ecs, ecs.entities()[0]);
   const selfId = world.entities()[0]?.id ?? 'scene';
   return {
@@ -73,43 +79,6 @@ function scriptWorldFor(world: EditorWorld): ScriptWorld {
       world.update(id, { components: { ...current.components, [component]: next } });
     },
   };
-}
-
-function readAabb(components: Record<string, unknown>): Aabb | null {
-  const raw = components[PHYSICS_KEY];
-  if (!isRecord(raw)) return null;
-  const x = raw.x;
-  const y = raw.y;
-  const w = raw.w;
-  const h = raw.h;
-  if (typeof x !== 'number' || typeof y !== 'number' || typeof w !== 'number' || typeof h !== 'number') return null;
-  return { x, y, w, h };
-}
-
-/**
- * Separate overlapping `components.physics` boxes along X.
- * `@jurfi/physics` exposes `overlaps` and `clampPos` only, so this is the whole step.
- */
-function stepPhysics(world: EditorWorld): void {
-  const bodies: { id: string; box: Aabb; components: Record<string, unknown> }[] = [];
-  for (const entity of world.entities()) {
-    const box = readAabb(entity.components);
-    if (box) bodies.push({ id: entity.id, box, components: entity.components });
-  }
-  for (let i = 0; i < bodies.length; i += 1) {
-    for (let j = i + 1; j < bodies.length; j += 1) {
-      const a = bodies[i];
-      const b = bodies[j];
-      if (!a || !b || !overlaps(a.box, b.box)) continue;
-      const push = a.box.x + a.box.w - b.box.x;
-      b.box = { ...b.box, x: clampPos(b.box.x + push, -10_000, 10_000) };
-    }
-  }
-  for (const body of bodies) {
-    world.update(body.id, {
-      components: { ...body.components, [PHYSICS_KEY]: { ...body.box } },
-    });
-  }
 }
 
 function applyChannel(current: unknown, channel: number, value: unknown): unknown {
@@ -158,8 +127,14 @@ export function createPlaySession(options: PlaySessionOptions): PlaySession {
   let runtime: ScriptRuntime | undefined;
   let player: ClipPlayer | undefined;
   let playing = false;
+  let disposed = false;
   let handle = 0;
   let lastTime: number | undefined;
+  let physics: PhysicsSim | null = null;
+  let pending: Promise<PhysicsSim | null> | null = null;
+  let generation = 0;
+  let missingLogged = false;
+  let tail: Promise<void> = Promise.resolve();
 
   const log = (entry: PlayLog): void => {
     options.onLog?.(entry);
@@ -192,22 +167,105 @@ export function createPlaySession(options: PlaySessionOptions): PlaySession {
     player?.play();
   };
 
-  const simulate = (dt: number): void => {
+  const releasePhysics = (): void => {
+    generation += 1;
+    const current = physics;
+    physics = null;
+    pending = null;
+    current?.destroy();
+  };
+
+  const ensurePhysics = (): Promise<PhysicsSim | null> => {
+    if (disposed) return Promise.resolve(null);
+    const ecs = coreWorld(options.world);
+    if (!ecs) {
+      if (!missingLogged) {
+        missingLogged = true;
+        log({ level: 'warn', message: 'Physics needs a core ECS world', source: 'physics' });
+      }
+      return Promise.resolve(null);
+    }
+    if (physics) return Promise.resolve(physics);
+    if (pending) return pending;
+    const ticket = generation;
+    const loading = PhysicsWorld.create({ gravity: DEFAULT_GRAVITY, fixedDt: DEFAULT_FIXED_DT })
+      .then((created) => {
+        if (pending === loading) pending = null;
+        if (ticket !== generation || disposed) {
+          created.destroy();
+          return null;
+        }
+        const bound = coreWorld(options.world);
+        if (!bound) {
+          created.destroy();
+          return null;
+        }
+        created.attach(bound);
+        physics = created;
+        return created;
+      })
+      .catch((error: unknown) => {
+        if (pending === loading) pending = null;
+        const message = error instanceof Error ? error.message : 'Physics world failed to start';
+        log({ level: 'error', message, source: 'physics' });
+        return null;
+      });
+    pending = loading;
+    return loading;
+  };
+
+  const simulate = async (dt: number, ticket: number): Promise<void> => {
+    if (ticket !== generation || disposed) return;
     if (runtime?.running) runtime.tick(dt);
     if (player) {
       player.update(dt);
       const clip = clipOf();
       if (clip) applyClip(options.world, clip, player.time);
     }
-    stepPhysics(options.world);
+    if (ticket !== generation || disposed) return;
+    const ecs = coreWorld(options.world);
+    if (!ecs) {
+      if (!missingLogged) {
+        missingLogged = true;
+        log({ level: 'warn', message: 'Physics needs a core ECS world', source: 'physics' });
+      }
+      return;
+    }
+    const sim = await ensurePhysics();
+    if (!sim || ticket !== generation || disposed) return;
+    ecs.time.tick(dt);
+    if (ticket !== generation || disposed) return;
+    sim.step(ecs.time.delta);
+  };
+
+  const enqueue = (dt: number): Promise<void> => {
+    const ticket = generation;
+    const run = tail.then(() => simulate(dt, ticket));
+    tail = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
   };
 
   const frame = (time: number): void => {
     if (!playing) return;
     const dt = lastTime === undefined ? 0 : Math.min(0.1, (time - lastTime) / 1000);
     lastTime = time;
-    if (dt > 0) simulate(dt);
-    handle = schedule(frame);
+    if (dt <= 0) {
+      handle = schedule(frame);
+      return;
+    }
+    void enqueue(dt).then(
+      () => {
+        if (playing) handle = schedule(frame);
+      },
+      (error: unknown) => {
+        const message = error instanceof Error ? error.message : 'Physics step failed';
+        log({ level: 'error', message, source: 'physics' });
+        if (playing) handle = schedule(frame);
+      },
+    );
   };
 
   const cancelFrame = (): void => {
@@ -226,6 +284,7 @@ export function createPlaySession(options: PlaySessionOptions): PlaySession {
       }
       playing = true;
       boot();
+      void ensurePhysics();
       handle = schedule(frame);
     },
     pause() {
@@ -239,23 +298,27 @@ export function createPlaySession(options: PlaySessionOptions): PlaySession {
       cancelFrame();
       runtime?.stop();
       player = undefined;
+      releasePhysics();
     },
-    step(dt = 1 / 60) {
+    step(dt = DEFAULT_FIXED_DT) {
       if (!runtime?.running && !player) boot();
       runtime?.resume();
       player?.play();
-      simulate(dt);
-      runtime?.pause();
-      player?.pause();
       playing = false;
       cancelFrame();
+      return enqueue(dt).finally(() => {
+        runtime?.pause();
+        player?.pause();
+      });
     },
     dispose() {
+      disposed = true;
       playing = false;
       cancelFrame();
       runtime?.dispose();
       runtime = undefined;
       player = undefined;
+      releasePhysics();
     },
   };
 }

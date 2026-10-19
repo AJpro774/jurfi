@@ -24,10 +24,12 @@ export interface EditorContext {
   /** Snapshot the world on the way in from editing. Further calls while paused resume without a new snapshot. */
   play(): void;
   pause(): void;
-  /** Restore the snapshot taken when play began and return to editing. */
+  /** Restore the snapshot taken when play began, dispose the physics world, and return to editing. */
   stop(): void;
-  /** Enter paused play (snapshotting if needed) and emit `play:step`. No runtime is ticked yet. */
-  step(): void;
+  /** Snapshot if still editing, run one play tick, and leave the session paused. */
+  step(): Promise<void>;
+  /** Stop the play session and free its physics world. */
+  dispose(): void;
   getGizmoMode(): GizmoMode;
   setGizmoMode(mode: GizmoMode): void;
 }
@@ -125,11 +127,14 @@ export function createEditorContext(options: EditorContextOptions = {}): EditorC
     },
     step() {
       captureSnapshot();
-      playSession.step();
-      if (playState === 'playing') setPlayState('paused');
-      else if (playState === 'editing') setPlayState('paused');
+      const done = playSession.step();
+      if (playState === 'playing' || playState === 'editing') setPlayState('paused');
       bus.emit('play:step', { state: playState });
       bus.emit('status', { message: 'Stepped', level: 'info' });
+      return done;
+    },
+    dispose() {
+      playSession.dispose();
     },
     getGizmoMode: () => gizmo,
     setGizmoMode(mode) {

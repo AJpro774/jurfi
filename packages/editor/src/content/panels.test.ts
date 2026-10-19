@@ -215,9 +215,9 @@ describe('content panels', () => {
     expect(input.getAttribute('aria-describedby')).toBeTruthy();
     input.value = '5';
     input.dispatchEvent(new Event('input', { bubbles: true }));
-    expect(componentBag(ctx, 'player', 'Transform').position).toEqual([5, 1, 0]);
+    expect(componentBag(ctx, 'player', 'Transform').position).toEqual([5, 3, 0]);
     expect(componentBag(ctx, 'light', 'Transform').position).toEqual([5, 4, 1]);
-    expect(componentBag(ctx, 'player', 'transform').position).toEqual({ x: 5, y: 1, z: 0 });
+    expect(componentBag(ctx, 'player', 'transform').position).toEqual({ x: 5, y: 3, z: 0 });
   });
 
   it('adds a component and undoes it', () => {

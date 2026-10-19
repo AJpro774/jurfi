@@ -7,11 +7,14 @@ const CHECKER = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
 const IDENTITY_ROTATION = [0, 0, 0, 1] as const;
 const UNIT_SCALE = [1, 1, 1] as const;
 
-function transform(position: readonly [number, number, number]): Record<string, unknown> {
+function transform(
+  position: readonly [number, number, number],
+  scale: readonly [number, number, number] = UNIT_SCALE,
+): Record<string, unknown> {
   return {
     position: [...position],
     rotation: [...IDENTITY_ROTATION],
-    scale: [...UNIT_SCALE],
+    scale: [...scale],
   };
 }
 
@@ -52,9 +55,11 @@ export function createDemoSnapshot(): WorldSnapshot {
         components: {
           kind: 'node',
           health: -1,
-          Transform: transform([0, 1, 0]),
-          transform: viewportTransform([0, 1, 0]),
+          Transform: transform([0, 3, 0]),
+          transform: viewportTransform([0, 3, 0]),
           mesh: { shape: 'box' },
+          RigidBody: { type: 'dynamic', mass: 1 },
+          Collider: { shape: 'box', halfExtents: [0.5, 0.5, 0.5], friction: 0.6, restitution: 0 },
         },
       },
       {
@@ -74,9 +79,11 @@ export function createDemoSnapshot(): WorldSnapshot {
         parentId: 'scene',
         components: {
           kind: 'node',
-          Transform: transform([0, 0, 0]),
+          Transform: transform([0, 0, 0], [8, 1, 8]),
           transform: viewportTransform([0, 0, 0], [8, 1, 8]),
           mesh: { shape: 'plane' },
+          RigidBody: { type: 'fixed' },
+          Collider: { shape: 'box', halfExtents: [4, 0.025, 4] },
         },
       },
     ],

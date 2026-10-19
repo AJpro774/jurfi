@@ -65,9 +65,7 @@ const hit = physics.raycast([0, 5, 0], [0, -1, 0], 20, (entity) => entity !== ig
 
 ## Editor Play mode
 
-Play mode on main does not tick a simulation. The fake solver is on open PR #37 (`cursor/editor-play-runtime-1f32`, `packages/editor/src/play-runtime.ts`, local `stepPhysics`). That function pushes overlapping `components.physics` AABBs apart with `overlaps` and `clampPos` because this package did not have a world yet. It targets the editor's string-id `EditorWorld`, not the core ECS, so it is not wired from this package. `overlaps` and `clampPos` stay exported and the editor package is unchanged, so that branch still builds.
-
-When that session has a core `World`, replace `stepPhysics(options.world)` with a Rapier world created once for the play session:
+`packages/editor/src/play-runtime.ts` steps the core ECS world for the length of a play session. Play creates one Rapier world and attaches `EditorWorld.ecs`:
 
 ```ts
 const physics = await PhysicsWorld.create({ gravity: [0, -9.81, 0], fixedDt: 1 / 60 });
@@ -79,4 +77,4 @@ physics.step(ecs.time.delta);
 physics.destroy();
 ```
 
-Give the entities `Transform`, `RigidBody`, and `Collider` instead of a `components.physics` AABB.
+Stop restores the editor snapshot after `destroy()`. Pause keeps the Rapier world. A document with no `ecs` skips the step. The demo scene gives Player a dynamic box and Ground a fixed box. `overlaps` and `clampPos` stay exported for Pong; play mode does not use them.
