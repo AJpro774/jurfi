@@ -27,6 +27,11 @@ class Input {
 type ActionType = 'button' | 'axis1d' | 'axis2d';
 ```
 
+Press latching: a key/mouse/touch-button press that starts and ends between two `update()` calls is not lost. Any down since the
+previous `update()` makes the action (and `VirtualButton.pressed`) read pressed/justPressed through the next poll; it clears on the
+following `update()`. Holds are unchanged. Auto-repeat keydowns are ignored, and gamepad buttons and axis-type bindings are sampled
+state, so they are not latched.
+
 Bindings (`device` = `key` | `mouse` | `gamepad` | `touch`): `{device:'key', code}`, `{device:'key', negative, positive}`,
 `{device:'key', up, down, left, right}`, `{device:'mouse', button}`, `{device:'mouse', delta:'x'|'y'|'wheel'|'move', scale?}`,
 `{device:'gamepad', button|axis|stick, pad?}`, `{device:'touch', control}`. 2D convention: up is `y = -1`.
@@ -181,4 +186,44 @@ function frame() {
   perf.endFrame();
 }
 console.log(JSON.stringify(perf), perf.checkBudgets());
+```
+
+### Clock and RNG (`@jurfi/perf`)
+
+No dependency on `@jurfi/core`. Fixed-step timing plus a deterministic seeded RNG.
+
+```ts
+function createClock(opts?: { fixedStepMs?: number /* 1000/60 */; maxCatchUp?: number /* 5 */ }): Clock;
+function createTestClock(fixedStepMs?: number /* 1000/60 */): TestClock;
+interface Clock {
+  now(): number;            // simulated ms = frame * fixedStepMs; moves only via step()
+  tick(realMs: number): void; // add elapsed real ms (a delta); backlog capped at maxCatchUp steps
+  step(): boolean;          // consume one fixed step if accumulated; false otherwise
+  readonly alpha: number;   // accumulator / fixedStepMs, for render interpolation
+  readonly frame: number;   // fixed steps consumed
+  reset(): void;
+}
+interface TestClock extends Clock { advance(n: number): void }  // n deterministic fixed steps, no real time
+
+function createRng(seed: number | string): Rng;   // PCG32 (XSH-RR); never uses Math.random
+interface Rng {
+  next(): number;                       // [0, 1)
+  int(min: number, max: number): number; // integer in [min, max): min inclusive, max EXCLUSIVE; throws if max <= min
+  pick<T>(arr: readonly T[]): T;        // throws on empty
+  fork(label: string): Rng;             // independent stream; does not advance the parent
+  state: string;                        // get/set (32 hex chars) to save/replay a stream
+}
+```
+
+`?test=1` samples must drive time through `createTestClock().advance(n)` only, and take randomness from `createRng(seed)`.
+
+```ts
+const clock = import.meta.env?.test ? createTestClock() : createClock();
+const rng = createRng('level-1'); const particles = rng.fork('particles');
+function frame(realDeltaMs: number) {
+  clock.tick(realDeltaMs);
+  while (clock.step()) update(clock.now());
+  render(clock.alpha);
+}
+const saved = rng.state; /* ... */ rng.state = saved; // replay
 ```

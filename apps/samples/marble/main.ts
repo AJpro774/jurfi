@@ -3,9 +3,12 @@ import { AmbientLight, Color, DirectionalLight, Mesh, OctahedronGeometry } from 
 import { createMesh, createPerspectiveCamera, createRenderer, createScene, createStandardMaterial, detectBackend } from '@jurfi/render';
 import { Input } from '@jurfi/input';
 import { AudioEngine } from '@jurfi/audio';
-import { Profiler } from '@jurfi/perf';
+import { Profiler, createClock, createRng, createTestClock } from '@jurfi/perf';
 import { MarbleGame, HALF, RADIUS } from './game';
-import { createClock, createRng, STEP } from './clock';
+
+// Fixed step shared by both clocks: 1/60 s (the clock works in ms, the game in seconds).
+const STEP_MS = 1000 / 60;
+const STEP = STEP_MS / 1000;
 
 // NOTE: samples must never import @jurfi/editor (export guard).
 const params = new URLSearchParams(location.search);
@@ -48,11 +51,13 @@ async function main(): Promise<void> {
 
   const audio = new AudioEngine({ muted: testMode });
   if (!testMode) { audio.setBusVolume('master', 0.6); audio.setBusVolume('sfx', 1); }
-  const clock = createClock(testMode);
-  const perf = new Profiler({ now: () => clock.fixed ? clock.now() * 1000 : performance.now() });
+  // Test mode: time moves only via clock.advance(); otherwise a real-time fixed-step clock (backlog capped at 15 steps = 0.25 s).
+  const testClock = createTestClock(STEP_MS);
+  const clock = testMode ? testClock : createClock({ fixedStepMs: STEP_MS, maxCatchUp: 15 });
+  const perf = new Profiler({ now: () => (testMode ? clock.now() : performance.now()) });
   const sysUpdate = perf.register('update');
   const sysDraw = perf.register('draw');
-  const rng = createRng(testMode ? 1337 : (Date.now() & 0xffffffff));
+  const rng = createRng(testMode ? 1337 : Date.now());
   const game = new MarbleGame(rng, {
     onCollect: () => { audio.playTone({ frequency: 660, duration: 0.08, type: 'sine', volume: 0.5, bus: 'sfx' }); },
     onBump: () => { audio.playTone({ frequency: 150, duration: 0.05, type: 'square', volume: 0.3, bus: 'sfx' }); },
@@ -93,7 +98,6 @@ async function main(): Promise<void> {
     if (p.active && p.source === 'touch') { ax = clamp1((p.nx - 0.5) * 3); az = clamp1((p.ny - 0.5) * 3); }
     // Touch: any active touch starts the game from the ready screen (restart after winning is Space/Enter).
     game.step(STEP, ax, az, jump || (game.phase === 'ready' && p.active && p.source === 'touch'));
-    clock.tick();
   }
   function clamp1(v: number): number { return Math.max(-1, Math.min(1, v)); }
 
@@ -107,15 +111,15 @@ async function main(): Promise<void> {
         : `Gems ${game.collected}/${game.gems.length}`;
   }
 
-  let last = 0, acc = 0;
+  let last = 0;
   function frame(ts: number): void {
     perf.beginFrame();
     perf.begin(sysUpdate);
-    if (testMode) update();
+    if (testMode) { testClock.advance(1); update(); }
     else {
-      acc += Math.min(0.25, (ts - last) / 1000);
+      clock.tick(ts - last);
       last = ts;
-      while (acc >= STEP) { update(); acc -= STEP; }
+      while (clock.step()) update();
     }
     perf.end(sysUpdate);
     perf.begin(sysDraw);
@@ -133,8 +137,9 @@ async function main(): Promise<void> {
       clock,
       perf,
       /** Deterministically advance n steps (and redraw). */
-      advance(n: number) { for (let i = 0; i < n; i++) update(); draw(); },
-      start() { game.step(STEP, 0, 0, true); },
+      advance(n: number) { for (let i = 0; i < n; i++) { testClock.advance(1); update(); } draw(); },
+      /** Start play. Resets the frame counters first so state after start()+advance(n) does not depend on how many rAF frames ran before the call. */
+      start() { testClock.reset(); game.frame = 0; game.step(STEP, 0, 0, true); },
     };
   }
 }

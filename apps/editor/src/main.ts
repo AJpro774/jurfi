@@ -1,4 +1,23 @@
 import '@jurfi/ui';
-import { editorTitle } from '@jurfi/editor';
+import '@jurfi/editor/shell.css';
+import { createEditor, registerNodeGraphPanel, registerViewportPanel, type Editor } from '@jurfi/editor';
 
-document.querySelector('#app')!.innerHTML = `<div class="jurfi-panel">${editorTitle()}</div>`;
+const root = document.querySelector('#app');
+if (!(root instanceof HTMLElement)) throw new Error('Jurfi editor is missing #app');
+const app: HTMLElement = root;
+
+registerViewportPanel();
+registerNodeGraphPanel();
+
+let active: Editor | undefined;
+
+function boot(): void {
+  active?.dispose();
+  active = createEditor({ root: app });
+}
+
+boot();
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => active?.dispose());
+}
