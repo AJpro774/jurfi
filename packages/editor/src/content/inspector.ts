@@ -16,7 +16,8 @@ import {
   writeComponentField,
   writeLooseField,
 } from './edits';
-import { isRecord, readFlags } from './flags';
+import { watchWorld } from './ecs';
+import { flagBook, isRecord, readFlags } from './flags';
 
 const AXES = ['X', 'Y', 'Z', 'W'] as const;
 
@@ -27,15 +28,19 @@ export function mountInspector(el: HTMLElement, ctx: EditorContext): () => void 
   el.append(panel);
 
   let writing = false;
-  const offWorld = ctx.world.subscribe(() => {
+  const offWorld = watchWorld(ctx, () => {
     if (!writing) render();
   });
   const offSelection = ctx.selection.subscribe(() => render());
+  const offFlags = flagBook(ctx).subscribe(() => {
+    if (!writing) render();
+  });
   render();
 
   return () => {
     offWorld();
     offSelection();
+    offFlags();
     panel.remove();
   };
 
@@ -55,7 +60,7 @@ export function mountInspector(el: HTMLElement, ctx: EditorContext): () => void 
   function render(): void {
     const entities = selectedEntities();
     const ids = entities.map((entity) => entity.id);
-    const lockedCount = entities.filter((entity) => readFlags(entity.components).locked).length;
+    const lockedCount = entities.filter((entity) => readFlags(ctx, entity.id).locked).length;
     const allLocked = entities.length > 0 && lockedCount === entities.length;
     const assets = assetLibrary(ctx).assets();
     panel.replaceChildren();
@@ -95,7 +100,7 @@ export function mountInspector(el: HTMLElement, ctx: EditorContext): () => void 
     }
 
     const available = componentSchemas().filter((schema) => entities.some((entity) => (
-      entity.components[schema.type] === undefined && !readFlags(entity.components).locked
+      entity.components[schema.type] === undefined && !readFlags(ctx, entity.id).locked
     )));
     if (available.length > 0) scroller.append(addRow(available.map((schema) => schema.type), ids, allLocked));
     panel.append(scroller);
@@ -245,7 +250,8 @@ export function mountInspector(el: HTMLElement, ctx: EditorContext): () => void 
         const parsed = parseNumberField(input.value);
         input.setAttribute('aria-invalid', parsed === undefined ? 'true' : 'false');
         if (parsed === undefined) return;
-        edit(() => writeComponentField(ctx, ids, type, field.key, parsed, axis, mergeKey(ids, type, field.key, axis)));
+        const lane = labels[axis];
+        edit(() => writeComponentField(ctx, ids, type, field.key, parsed, lane, mergeKey(ids, type, field.key, axis)));
       });
       input.addEventListener('blur', () => render());
       axes.append(input);

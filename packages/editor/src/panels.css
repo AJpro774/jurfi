@@ -322,6 +322,44 @@
   height: var(--space-5);
 }
 
+.jp-menu {
+  position: fixed;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  padding: var(--space-1);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--btn-radius);
+}
+
+.jp-menu-item {
+  display: flex;
+  width: 100%;
+  height: var(--btn-h);
+  padding-inline: var(--btn-px);
+  border: 1px solid transparent;
+  border-radius: var(--btn-radius);
+  background: transparent;
+  color: var(--btn-fg);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.jp-menu-item:hover,
+.jp-menu-item:focus-visible {
+  background: var(--surface-3);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.jp-menu-item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .jp-file,
 .jp-sr {
   position: absolute;

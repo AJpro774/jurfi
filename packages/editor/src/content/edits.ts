@@ -1,7 +1,8 @@
+import type { Entity } from '@jurfi/core';
 import type { EditorContext } from '../context';
-import type { EntityRecord, WorldSnapshot } from '../world';
 import { componentSchema } from './components';
-import { FLAGS_KEY, isRecord, readFlags } from './flags';
+import { commitEcs, ecsOf, freshEntityId, resolveEntity, siblingRecords } from './ecs';
+import { flagBook, isRecord, readFlags } from './flags';
 
 export interface Placement {
   parentId: string | null;
@@ -13,110 +14,137 @@ function sameValue(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-function descendantIds(root: string, entities: readonly EntityRecord[]): Set<string> {
-  const children = new Map<string, string[]>();
-  for (const entity of entities) {
-    if (entity.parentId === null) continue;
-    const list = children.get(entity.parentId) ?? [];
-    list.push(entity.id);
-    children.set(entity.parentId, list);
-  }
+function descendantIds(ctx: EditorContext, root: string): Set<string> {
   const found = new Set<string>();
   const walk = (id: string): void => {
-    for (const child of children.get(id) ?? []) {
-      if (found.has(child)) continue;
-      found.add(child);
-      walk(child);
+    for (const child of siblingRecords(ctx, id)) {
+      if (found.has(child.id)) continue;
+      found.add(child.id);
+      walk(child.id);
     }
   };
   walk(root);
   return found;
 }
 
-function sameStructure(before: readonly EntityRecord[], after: readonly EntityRecord[]): boolean {
-  if (before.length !== after.length) return false;
-  return before.every((entity, index) => {
-    const next = after[index];
-    return next !== undefined && entity.id === next.id && entity.parentId === next.parentId;
-  });
-}
-
 export function renameEntity(ctx: EditorContext, id: string, name: string): boolean {
   const entity = ctx.world.get(id);
-  if (!entity || readFlags(entity.components).locked || entity.name === name) return false;
-  const previous = entity.name;
-  ctx.world.update(id, { name });
-  ctx.undo.push({
-    label: 'Rename',
-    mergeKey: `entity:${id}:name`,
-    undo: () => ctx.world.update(id, { name: previous }),
-    redo: () => ctx.world.update(id, { name }),
+  if (!entity || readFlags(ctx, id).locked || entity.name === name) return false;
+  const ecs = ecsOf(ctx.world);
+  const numeric = ecs ? resolveEntity(ecs, id) : undefined;
+  if (!ecs || numeric === undefined) {
+    const previous = entity.name;
+    ctx.world.update(id, { name });
+    ctx.undo.push({
+      label: 'Rename',
+      mergeKey: `entity:${id}:name`,
+      undo: () => ctx.world.update(id, { name: previous }),
+      redo: () => ctx.world.update(id, { name }),
+    });
+    return true;
+  }
+  return commitEcs(ctx, 'Rename', `entity:${id}:name`, (world) => {
+    world.setName(numeric, name);
   });
-  return true;
 }
 
 export function setFlag(ctx: EditorContext, id: string, key: 'visible' | 'locked', value: boolean): boolean {
-  const entity = ctx.world.get(id);
-  if (!entity) return false;
-  const flags = readFlags(entity.components);
+  if (!ctx.world.get(id)) return false;
+  const flags = readFlags(ctx, id);
   if (flags[key] === value) return false;
-  const before = entity.components;
-  const components = { ...entity.components, [FLAGS_KEY]: { ...flags, [key]: value } };
-  ctx.world.update(id, { components });
+  const before = flags;
+  const next = { ...flags, [key]: value };
+  const apply = (state: typeof flags): void => {
+    flagBook(ctx).write(id, state);
+    ctx.project.markDirty();
+  };
+  apply(next);
   ctx.undo.push({
     label: key === 'visible' ? 'Toggle visibility' : 'Toggle lock',
-    undo: () => ctx.world.update(id, { components: before }),
-    redo: () => ctx.world.update(id, { components }),
+    undo: () => apply(before),
+    redo: () => apply(next),
   });
   return true;
 }
 
 export function moveEntity(ctx: EditorContext, id: string, placement: Placement): boolean {
-  const snapshot: WorldSnapshot = ctx.world.serialize();
-  const entities = snapshot.entities.map((entity) => ({ ...entity, components: { ...entity.components } }));
-  const index = entities.findIndex((entity) => entity.id === id);
-  const moving = entities[index];
-  if (!moving || readFlags(moving.components).locked) return false;
+  const ecs = ecsOf(ctx.world);
+  const moving = ctx.world.get(id);
+  if (!ecs || !moving || readFlags(ctx, id).locked) return false;
   if (placement.parentId === id || placement.beforeId === id) return false;
-  if (placement.parentId !== null && descendantIds(id, entities).has(placement.parentId)) return false;
-  if (placement.parentId !== null) {
-    const parent = entities.find((entity) => entity.id === placement.parentId);
-    if (!parent || readFlags(parent.components).locked) return false;
+  if (placement.parentId !== null && descendantIds(ctx, id).has(placement.parentId)) return false;
+  if (placement.parentId !== null && (!ctx.world.get(placement.parentId) || readFlags(ctx, placement.parentId).locked)) {
+    return false;
   }
-
-  entities.splice(index, 1);
-  moving.parentId = placement.parentId;
-
-  let insertAt = entities.length;
+  const entity = resolveEntity(ecs, id);
+  const parent = placement.parentId === null ? null : resolveEntity(ecs, placement.parentId);
+  if (entity === undefined || parent === undefined) return false;
+  const siblings = siblingRecords(ctx, placement.parentId).filter((row) => row.id !== id);
+  let index = siblings.length;
   if (placement.beforeId !== null) {
-    const before = entities.findIndex((entity) => entity.id === placement.beforeId);
-    if (before >= 0) insertAt = before;
-  } else {
-    let lastSibling = -1;
-    for (let cursor = 0; cursor < entities.length; cursor += 1) {
-      if (entities[cursor]?.parentId === placement.parentId) lastSibling = cursor;
-    }
-    insertAt = lastSibling === -1 ? entities.length : lastSibling + 1;
+    const before = siblings.findIndex((row) => row.id === placement.beforeId);
+    if (before >= 0) index = before;
   }
-  entities.splice(insertAt, 0, moving);
-  if (sameStructure(snapshot.entities, entities)) return false;
-
-  const next: WorldSnapshot = { entities };
-  ctx.world.deserialize(next);
-  const after = ctx.world.serialize();
-  ctx.undo.push({
-    label: 'Move entity',
-    undo: () => ctx.world.deserialize(snapshot),
-    redo: () => ctx.world.deserialize(after),
+  const currentIndex = siblingRecords(ctx, moving.parentId).findIndex((row) => row.id === id);
+  if (moving.parentId === placement.parentId && index === currentIndex) return false;
+  return commitEcs(ctx, 'Move entity', undefined, (world) => {
+    world.setParent(entity, parent, { keepWorldTransform: true, index });
   });
-  return true;
 }
 
-function replaceAxis(current: unknown, axis: number, value: unknown): unknown[] {
-  const next = Array.isArray(current) ? [...current] : [];
-  while (next.length <= axis) next.push(0);
-  next[axis] = value;
-  return next;
+export function createEntity(ctx: EditorContext, parentId: string | null, name = 'Entity'): string | null {
+  const ecs = ecsOf(ctx.world);
+  if (!ecs) return null;
+  if (parentId !== null && (!ctx.world.get(parentId) || readFlags(ctx, parentId).locked)) return null;
+  const id = freshEntityId(ctx);
+  const parent = parentId === null ? null : resolveEntity(ecs, parentId);
+  if (parent === undefined) return null;
+  const ok = commitEcs(ctx, parentId ? 'Create child' : 'Create entity', undefined, (world) => {
+    const created = world.create();
+    world.setAlias(created, id);
+    world.setName(created, name);
+    if (parent !== null) world.setParent(created, parent);
+  });
+  return ok ? id : null;
+}
+
+export function duplicateEntity(ctx: EditorContext, id: string): string | null {
+  const ecs = ecsOf(ctx.world);
+  const source = ctx.world.get(id);
+  if (!ecs || !source || readFlags(ctx, id).locked) return null;
+  const copyId = freshEntityId(ctx);
+  const siblings = siblingRecords(ctx, source.parentId);
+  const index = siblings.findIndex((row) => row.id === id);
+  const parent = source.parentId === null ? null : resolveEntity(ecs, source.parentId);
+  if (parent === undefined) return null;
+  const components = source.components;
+  const name = `${source.name} Copy`;
+  const ok = commitEcs(ctx, 'Duplicate', undefined, (world) => {
+    const created = world.create();
+    world.setAlias(created, copyId);
+    world.setName(created, name);
+    for (const [key, value] of Object.entries(components)) world.set(created, key, value);
+    world.setParent(created, parent, { index: index < 0 ? undefined : index + 1 });
+  });
+  return ok ? copyId : null;
+}
+
+export function deleteEntities(ctx: EditorContext, ids: readonly string[]): boolean {
+  const ecs = ecsOf(ctx.world);
+  if (!ecs) return false;
+  const targets = ids.filter((id) => ctx.world.get(id) !== undefined && !readFlags(ctx, id).locked);
+  if (targets.length === 0) return false;
+  const entities: Entity[] = [];
+  for (const id of targets) {
+    const entity = resolveEntity(ecs, id);
+    if (entity !== undefined) entities.push(entity);
+  }
+  if (entities.length === 0) return false;
+  return commitEcs(ctx, targets.length === 1 ? 'Delete' : 'Delete entities', undefined, (world) => {
+    for (const entity of entities) {
+      if (world.isAlive(entity)) world.destroy(entity);
+    }
+  });
 }
 
 export function writeComponentField(
@@ -125,35 +153,27 @@ export function writeComponentField(
   type: string,
   key: string,
   value: unknown,
-  axis: number | undefined,
+  lane: string | undefined,
   mergeKey: string,
 ): boolean {
-  const before = new Map<string, Record<string, unknown>>();
-  const after = new Map<string, Record<string, unknown>>();
+  const ecs = ecsOf(ctx.world);
+  if (!ecs) return writeBagField(ctx, ids, type, key, value, lane, mergeKey);
+  const edits: { entity: Entity; path: string }[] = [];
   for (const id of ids) {
     const entity = ctx.world.get(id);
-    if (!entity || readFlags(entity.components).locked) continue;
+    const numeric = resolveEntity(ecs, id);
+    if (!entity || numeric === undefined || readFlags(ctx, id).locked) continue;
     const current = entity.components[type];
     if (!isRecord(current)) continue;
-    const nextValue = axis === undefined ? value : replaceAxis(current[key], axis, value);
-    if (sameValue(current[key], nextValue)) continue;
-    const nextComponents = { ...entity.components, [type]: { ...current, [key]: nextValue } };
-    before.set(id, entity.components);
-    after.set(id, mirrorViewportTransform(type, nextComponents));
+    const path = lane === undefined ? key : `${key}.${lane}`;
+    const currentValue = lane === undefined ? current[key] : laneValue(current[key], lane);
+    if (sameValue(currentValue, value)) continue;
+    edits.push({ entity: numeric, path });
   }
-  if (before.size === 0) return false;
-  for (const [id, components] of after) ctx.world.update(id, { components });
-  ctx.undo.push({
-    label: `Edit ${key}`,
-    mergeKey,
-    undo() {
-      for (const [id, components] of before) ctx.world.update(id, { components });
-    },
-    redo() {
-      for (const [id, components] of after) ctx.world.update(id, { components });
-    },
+  if (edits.length === 0) return false;
+  return commitEcs(ctx, `Edit ${key}`, mergeKey, (world) => {
+    for (const edit of edits) world.setField(edit.entity, type, edit.path, value);
   });
-  return true;
 }
 
 export function writeLooseField(
@@ -164,34 +184,106 @@ export function writeLooseField(
   mergeKey: string,
 ): boolean {
   const entity = ctx.world.get(id);
-  if (!entity || readFlags(entity.components).locked || sameValue(entity.components[key], value)) return false;
-  const before = entity.components;
-  const components = { ...entity.components, [key]: value };
-  ctx.world.update(id, { components });
-  ctx.undo.push({
-    label: `Edit ${key}`,
-    mergeKey,
-    undo: () => ctx.world.update(id, { components: before }),
-    redo: () => ctx.world.update(id, { components }),
+  if (!entity || readFlags(ctx, id).locked || sameValue(entity.components[key], value)) return false;
+  const ecs = ecsOf(ctx.world);
+  const numeric = ecs ? resolveEntity(ecs, id) : undefined;
+  if (!ecs || numeric === undefined) {
+    const before = entity.components;
+    const components = { ...entity.components, [key]: value };
+    ctx.world.update(id, { components });
+    ctx.undo.push({
+      label: `Edit ${key}`,
+      mergeKey,
+      undo: () => ctx.world.update(id, { components: before }),
+      redo: () => ctx.world.update(id, { components }),
+    });
+    return true;
+  }
+  return commitEcs(ctx, `Edit ${key}`, mergeKey, (world) => {
+    world.set(numeric, key, value);
   });
-  return true;
 }
 
 export function addComponentType(ctx: EditorContext, ids: readonly string[], type: string): boolean {
   const schema = componentSchema(type);
   if (!schema) return false;
+  const ecs = ecsOf(ctx.world);
+  if (!ecs) return addBagComponent(ctx, ids, type, schema.defaults(), schema.title);
+  const targets: Entity[] = [];
+  for (const id of ids) {
+    const entity = ctx.world.get(id);
+    const numeric = resolveEntity(ecs, id);
+    if (!entity || numeric === undefined || readFlags(ctx, id).locked || entity.components[type] !== undefined) continue;
+    targets.push(numeric);
+  }
+  if (targets.length === 0) return false;
+  const defaults = schema.defaults();
+  return commitEcs(ctx, `Add ${schema.title}`, undefined, (world) => {
+    for (const entity of targets) world.add(entity, type, defaults);
+  });
+}
+
+export function removeComponentType(ctx: EditorContext, ids: readonly string[], type: string): boolean {
+  const schema = componentSchema(type);
+  const ecs = ecsOf(ctx.world);
+  if (!ecs) return removeBagComponent(ctx, ids, type, schema?.title ?? type);
+  const targets: Entity[] = [];
+  for (const id of ids) {
+    const entity = ctx.world.get(id);
+    const numeric = resolveEntity(ecs, id);
+    if (!entity || numeric === undefined || readFlags(ctx, id).locked || entity.components[type] === undefined) continue;
+    targets.push(numeric);
+  }
+  if (targets.length === 0) return false;
+  return commitEcs(ctx, `Remove ${schema?.title ?? type}`, undefined, (world) => {
+    for (const entity of targets) world.remove(entity, type);
+  });
+}
+
+export function looseKeys(components: Record<string, unknown>): string[] {
+  return Object.keys(components).filter((key) => {
+    if (componentSchema(key) || key === 'transform' || key === 'mesh') return false;
+    const value = components[key];
+    return typeof value === 'number' || typeof value === 'string' || typeof value === 'boolean';
+  });
+}
+
+function laneValue(value: unknown, lane: string): unknown {
+  if (Array.isArray(value)) {
+    const labels = ['x', 'y', 'z', 'w', 'r', 'g', 'b', 'a'];
+    const index = labels.indexOf(lane);
+    return index >= 0 ? value[index] : undefined;
+  }
+  if (!isRecord(value)) return undefined;
+  return value[lane];
+}
+
+function writeBagField(
+  ctx: EditorContext,
+  ids: readonly string[],
+  type: string,
+  key: string,
+  value: unknown,
+  lane: string | undefined,
+  mergeKey: string,
+): boolean {
   const before = new Map<string, Record<string, unknown>>();
   const after = new Map<string, Record<string, unknown>>();
   for (const id of ids) {
     const entity = ctx.world.get(id);
-    if (!entity || readFlags(entity.components).locked || entity.components[type] !== undefined) continue;
+    if (!entity || readFlags(ctx, id).locked) continue;
+    const current = entity.components[type];
+    if (!isRecord(current)) continue;
+    const nextValue = lane === undefined ? value : replaceLane(current[key], lane, value);
+    if (sameValue(lane === undefined ? current[key] : laneValue(current[key], lane), value)) continue;
     before.set(id, entity.components);
-    after.set(id, mirrorViewportTransform(type, { ...entity.components, [type]: schema.defaults() }));
+    after.set(id, { ...entity.components, [type]: { ...current, [key]: nextValue } });
   }
   if (before.size === 0) return false;
   for (const [id, components] of after) ctx.world.update(id, { components });
   ctx.undo.push({
-    label: `Add ${schema.title}`,
+    label: `Edit ${key}`,
+    mergeKey,
     undo() {
       for (const [id, components] of before) ctx.world.update(id, { components });
     },
@@ -202,13 +294,54 @@ export function addComponentType(ctx: EditorContext, ids: readonly string[], typ
   return true;
 }
 
-export function removeComponentType(ctx: EditorContext, ids: readonly string[], type: string): boolean {
-  const schema = componentSchema(type);
+function replaceLane(current: unknown, lane: string, value: unknown): unknown {
+  const labels = ['x', 'y', 'z', 'w'];
+  const index = labels.indexOf(lane);
+  if (Array.isArray(current) && index >= 0) {
+    const next = [...current];
+    while (next.length <= index) next.push(0);
+    next[index] = value;
+    return next;
+  }
+  if (isRecord(current)) return { ...current, [lane]: value };
+  return current;
+}
+
+function addBagComponent(
+  ctx: EditorContext,
+  ids: readonly string[],
+  type: string,
+  defaults: Record<string, unknown>,
+  title: string,
+): boolean {
   const before = new Map<string, Record<string, unknown>>();
   const after = new Map<string, Record<string, unknown>>();
   for (const id of ids) {
     const entity = ctx.world.get(id);
-    if (!entity || readFlags(entity.components).locked || entity.components[type] === undefined) continue;
+    if (!entity || readFlags(ctx, id).locked || entity.components[type] !== undefined) continue;
+    before.set(id, entity.components);
+    after.set(id, { ...entity.components, [type]: defaults });
+  }
+  if (before.size === 0) return false;
+  for (const [id, components] of after) ctx.world.update(id, { components });
+  ctx.undo.push({
+    label: `Add ${title}`,
+    undo() {
+      for (const [id, components] of before) ctx.world.update(id, { components });
+    },
+    redo() {
+      for (const [id, components] of after) ctx.world.update(id, { components });
+    },
+  });
+  return true;
+}
+
+function removeBagComponent(ctx: EditorContext, ids: readonly string[], type: string, title: string): boolean {
+  const before = new Map<string, Record<string, unknown>>();
+  const after = new Map<string, Record<string, unknown>>();
+  for (const id of ids) {
+    const entity = ctx.world.get(id);
+    if (!entity || readFlags(ctx, id).locked || entity.components[type] === undefined) continue;
     const components = { ...entity.components };
     delete components[type];
     before.set(id, entity.components);
@@ -217,7 +350,7 @@ export function removeComponentType(ctx: EditorContext, ids: readonly string[], 
   if (before.size === 0) return false;
   for (const [id, components] of after) ctx.world.update(id, { components });
   ctx.undo.push({
-    label: `Remove ${schema?.title ?? type}`,
+    label: `Remove ${title}`,
     undo() {
       for (const [id, components] of before) ctx.world.update(id, { components });
     },
@@ -226,36 +359,4 @@ export function removeComponentType(ctx: EditorContext, ids: readonly string[], 
     },
   });
   return true;
-}
-
-export function looseKeys(components: Record<string, unknown>): string[] {
-  return Object.keys(components).filter((key) => {
-    if (key === FLAGS_KEY || componentSchema(key) || key === 'transform' || key === 'mesh') return false;
-    const value = components[key];
-    return typeof value === 'number' || typeof value === 'string' || typeof value === 'boolean';
-  });
-}
-
-function mirrorViewportTransform(type: string, components: Record<string, unknown>): Record<string, unknown> {
-  if (type !== 'Transform' || !isRecord(components.Transform)) return components;
-  const transform = components.Transform;
-  const position = readVec(transform.position, 3, [0, 0, 0]);
-  const rotation = readVec(transform.rotation, 4, [0, 0, 0, 1]);
-  const scale = readVec(transform.scale, 3, [1, 1, 1]);
-  return {
-    ...components,
-    transform: {
-      position: { x: position[0], y: position[1], z: position[2] },
-      rotation: { x: rotation[0], y: rotation[1], z: rotation[2], w: rotation[3] },
-      scale: { x: scale[0], y: scale[1], z: scale[2] },
-    },
-  };
-}
-
-function readVec(value: unknown, width: number, fallback: number[]): number[] {
-  const source = Array.isArray(value) ? value : [];
-  return fallback.map((item, index) => {
-    const next = source[index];
-    return typeof next === 'number' && Number.isFinite(next) ? next : item;
-  }).slice(0, width);
 }

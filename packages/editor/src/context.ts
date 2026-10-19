@@ -1,5 +1,6 @@
 import { createEditorBus, type EditorBus, type GizmoMode, type PlayState } from './bus';
 import { createCommandRegistry, type CommandRegistry } from './commands';
+import { bindProjectDirty } from './project-sections';
 import { createSelection, type Selection } from './selection';
 import { createUndoStack, type UndoStack } from './undo';
 import { createWorld, type EditorWorld, type WorldSnapshot } from './world';
@@ -11,7 +12,7 @@ import { createWorld, type EditorWorld, type WorldSnapshot } from './world';
  * `undo` is the reversible edit stack (`push` / `undo` / `redo`).
  */
 export interface EditorContext {
-  /** Serializable scene document. `@jurfi/core` does not export an ECS world yet; this is the document panels read and write. */
+  /** Scene document. `createEditorWorld()` stores it in the core ECS. */
   readonly world: EditorWorld;
   readonly selection: Selection;
   readonly undo: UndoStack;
@@ -27,6 +28,10 @@ export interface EditorContext {
   step(): void;
   getGizmoMode(): GizmoMode;
   setGizmoMode(mode: GizmoMode): void;
+  /** Ask Editor Shell to autosave. Panels call this after data that lives outside the world. */
+  readonly project: {
+    markDirty(): void;
+  };
 }
 
 export interface EditorContextOptions {
@@ -72,7 +77,8 @@ export function createEditorContext(options: EditorContextOptions = {}): EditorC
     if (playState === 'editing') playSnapshot = world.serialize();
   };
 
-  return {
+  const dirty = new Set<() => void>();
+  const ctx: EditorContext = {
     world,
     selection,
     undo,
@@ -113,5 +119,12 @@ export function createEditorContext(options: EditorContextOptions = {}): EditorC
       gizmo = mode;
       bus.emit('gizmo:changed', { mode });
     },
+    project: {
+      markDirty() {
+        for (const listener of [...dirty]) listener();
+      },
+    },
   };
+  bindProjectDirty(ctx, dirty);
+  return ctx;
 }

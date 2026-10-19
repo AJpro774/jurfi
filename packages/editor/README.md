@@ -47,7 +47,9 @@ Placeholder ids the shell installs when nobody has claimed them yet:
 
 `registerContentPanels()` replaces the `hierarchy`, `inspector`, and `assets` placeholders. Call it before `createEditor`, along with `registerViewportPanel()`, `registerNodeGraphPanel()`, and `registerTimelinePanel()`. The editor app opens `createEditorWorld()` from `@jurfi/core`, loads `createDemoSnapshot()`, and calls `seedDemoLibrary(ctx)`.
 
-The inspector builds component editors from `@jurfi/core` `defineComponent` schemas (`Transform`, `Light`, `Light2D`, and any later component). Editing `Transform` also writes the viewport's `components.transform` document, which is the shape the scene view and gizmos read. `components.mesh.shape` is `box`, `sphere`, or `plane`. Visibility and lock stay in `jurfi.flags`. The asset library is session-only and is not part of the project file.
+The inspector builds component editors from `@jurfi/core` `defineComponent` schemas (`Transform`, `Light`, `Light2D`, and any later component). Component edits run inside a core `transaction` and the panels refresh from `onChanged`. `components.mesh.shape` is `box`, `sphere`, or `plane`. Hierarchy reparent calls `setParent` with `keepWorldTransform` and a sibling `index`.
+
+Visibility, lock, and the asset library are project sections, not ECS components. Register them with `registerProjectSection(id, { save, load })` under `hierarchy.flags` and `assets.library`, then call `ctx.project.markDirty()` after a change. The export in this package is a temporary stand-in for the Editor Shell hook of the same signature; each section is stored under its id in `project.sections`.
 
 ## EditorContext
 

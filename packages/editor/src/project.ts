@@ -1,5 +1,6 @@
 import type { EditorContext } from './context';
 import { parseLayout, type LayoutState } from './layout';
+import { collectProjectSections } from './project-sections';
 import { isWorldSnapshot, type EditorWorld, type WorldSnapshot } from './world';
 
 export const PROJECT_FORMAT = 'jurfi-project' as const;
@@ -11,6 +12,8 @@ export interface ProjectFile {
   version: typeof PROJECT_VERSION;
   world: WorldSnapshot;
   layout: LayoutState;
+  /** Panel sections keyed by `registerProjectSection` id. Absent in files written before sections existed. */
+  sections: Record<string, unknown>;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -23,6 +26,7 @@ export function writeProject(world: EditorWorld, layout: LayoutState): string {
     version: PROJECT_VERSION,
     world: world.serialize(),
     layout,
+    sections: collectProjectSections(),
   };
   return JSON.stringify(file, null, 2);
 }
@@ -40,6 +44,7 @@ export function readProject(json: string): ProjectFile | null {
       version: PROJECT_VERSION,
       world: value.world,
       layout,
+      sections: isRecord(value.sections) ? value.sections : {},
     };
   } catch {
     return null;

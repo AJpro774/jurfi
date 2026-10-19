@@ -16,7 +16,9 @@ import {
   type ZoneId,
 } from './layout';
 import { ensurePlaceholderPanels } from './panels';
+import { bindProjectSections } from './content/sections';
 import { AUTOSAVE_STORAGE_KEY, applyWorldSnapshot, downloadText, readProject, writeProject } from './project';
+import { applyProjectSections, subscribeProjectDirty } from './project-sections';
 import { getPanel, listPanels, subscribePanels } from './registry';
 import { eventToShortcut, formatShortcut } from './shortcuts';
 import { browserStore, type KeyValueStore } from './storage';
@@ -57,6 +59,8 @@ interface MenuItem {
 export function createEditor(options: CreateEditorOptions): Editor {
   ensurePlaceholderPanels();
   const ctx = createEditorContext({ world: options.world });
+  // Temporary until Editor Shell loads registered project sections itself.
+  bindProjectSections(ctx);
   const storage = options.storage ?? browserStore();
   const layoutKey = options.layoutKey ?? LAYOUT_STORAGE_KEY;
   const autosaveKey = options.autosaveKey ?? AUTOSAVE_STORAGE_KEY;
@@ -202,6 +206,7 @@ export function createEditor(options: CreateEditorOptions): Editor {
   cleanups.push(ctx.selection.subscribe(syncChrome));
   cleanups.push(ctx.undo.subscribe(syncChrome));
   cleanups.push(ctx.world.subscribe(() => scheduleAutosave()));
+  cleanups.push(subscribeProjectDirty(ctx, () => scheduleAutosave()));
   cleanups.push(ctx.bus.on('command:executed', syncChrome));
 
   const onKey = (event: KeyboardEvent): void => {
@@ -291,8 +296,10 @@ export function createEditor(options: CreateEditorOptions): Editor {
     let next: LayoutState;
     if (project && !options.world) {
       ctx.world.deserialize(project.world);
+      applyProjectSections(project.sections);
       next = project.layout;
     } else if (project) {
+      applyProjectSections(project.sections);
       next = project.layout;
     } else {
       next = tryParseLayout(storage.getItem(layoutKey) ?? '') ?? defaultLayout();
@@ -554,6 +561,7 @@ export function createEditor(options: CreateEditorOptions): Editor {
       return;
     }
     applyWorldSnapshot(ctx, project.world);
+    applyProjectSections(project.sections);
     layout = project.layout;
     paint(true);
     flushAutosave();
@@ -581,6 +589,8 @@ export function createEditor(options: CreateEditorOptions): Editor {
   function registerCommands(): void {
     register({ id: 'file.new', title: 'New Project', group: 'File', run: () => {
       applyWorldSnapshot(ctx, createDefaultSnapshot());
+      applyProjectSections({ 'hierarchy.flags': {}, 'assets.library': { assets: [] } });
+      ctx.project.markDirty();
       ctx.selection.set([]);
       ctx.bus.emit('status', { message: 'New project', level: 'info' });
     } });
