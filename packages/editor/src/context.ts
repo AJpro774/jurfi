@@ -1,5 +1,6 @@
 import { createEditorBus, type EditorBus, type GizmoMode, type PlayState } from './bus';
 import { createCommandRegistry, type CommandRegistry } from './commands';
+import type { EditorProject } from './project';
 import { createSelection, type Selection } from './selection';
 import { createUndoStack, type UndoStack } from './undo';
 import { createWorld, type EditorWorld, type WorldSnapshot } from './world';
@@ -17,6 +18,8 @@ export interface EditorContext {
   readonly undo: UndoStack;
   readonly commands: CommandRegistry;
   readonly bus: EditorBus;
+  /** Project-file handle. `markDirty()` schedules an autosave of every registered section. */
+  readonly project: EditorProject;
   getPlayState(): PlayState;
   /** Snapshot the world on the way in from editing. Further calls while paused resume without a new snapshot. */
   play(): void;
@@ -50,6 +53,12 @@ export function createEditorContext(options: EditorContextOptions = {}): EditorC
     bus.emit('world:changed', { snapshot: world.serialize() });
   });
 
+  const project: EditorProject = {
+    markDirty() {
+      bus.emit('project:dirty', {});
+    },
+  };
+
   const commands: CommandRegistry = {
     register: (command) => registry.register(command),
     get: (id) => registry.get(id),
@@ -78,6 +87,7 @@ export function createEditorContext(options: EditorContextOptions = {}): EditorC
     undo,
     commands,
     bus,
+    project,
     getPlayState: () => playState,
     play() {
       captureSnapshot();

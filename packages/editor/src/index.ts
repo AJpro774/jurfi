@@ -44,12 +44,16 @@ export {
   AUTOSAVE_STORAGE_KEY,
   PROJECT_FORMAT,
   PROJECT_VERSION,
+  applyProjectSections,
   applyWorldSnapshot,
   downloadText,
   readProject,
   writeProject,
 } from './project';
-export type { ProjectFile } from './project';
+export type { EditorProject, ProjectFile } from './project';
+
+export { registerProjectSection } from './project-sections';
+export type { ProjectSection, ProjectSectionWarning } from './project-sections';
 
 export { browserStore, memoryStore } from './storage';
 export type { KeyValueStore } from './storage';

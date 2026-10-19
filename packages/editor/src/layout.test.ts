@@ -94,6 +94,7 @@ describe('project serialization', () => {
     const project = readProject(json);
     expect(project?.world.entities.find((entity) => entity.id === 'player')?.name).toBe('Hero');
     expect(project?.layout).toEqual(layout);
+    expect(project?.sections).toEqual({});
     const restored = createWorld(project?.world);
     expect(restored.get('camera')?.parentId).toBe('scene');
   });
