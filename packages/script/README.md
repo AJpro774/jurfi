@@ -33,25 +33,50 @@ interface GraphDoc {
 `compile(doc, registry)` returns `{ ok, diagnostics, program, source }`.
 
 - `program` is the interpretable form the runtime executes. It is `null` when any diagnostic is an error.
-- `source` is plain JavaScript: `createScriptRuntime` from `@jurfi/script`, plus `clamp` from `@jurfi/core` when the graph uses `core/Clamp`.
+- `source` is plain JavaScript. It imports `createScriptHost` from `@jurfi/script/host`, plus `clamp` from `@jurfi/core` when the graph uses `core/Clamp`. It does not import the graph interpreter.
 - Diagnostics include `nodeId` (and `pin` / `edgeIndex` / `subgraph` when they apply). Errors cover unknown types, pin kind and direction, type mismatches, missing required links, duplicate data links, data cycles, and exec cycles. A disconnected exec input is a warning so the rest of the graph can still run.
 
 ## Play mode
 
 ```ts
-const runtime = createScriptRuntime({ world });
+const runtime = createScriptRuntime({ world, onNodeError });
 const result = runtime.load(doc);
 if (result.ok) {
   runtime.start();       // core/OnStart
-  runtime.tick(dt);      // core/OnUpdate, then resumed delays
+  runtime.tick(dt);      // resumed delays, then core/OnUpdate
   runtime.emit('ping', payload);
+  runtime.reload(next);  // swap the program, keep variables, do not replay OnStart
   runtime.stop();
 }
 ```
 
-`world` implements `ScriptWorld`. `tick` uses simulated time and does nothing while paused or stopped. `start()` clears graph-scoped variables and the runtime’s fallback entity-variable table.
+`world` implements `ScriptWorld`. Omitting it uses `createScriptWorld(createWorld())` from `@jurfi/core`, with a fresh entity as `self`. `tick` uses simulated time and does nothing while paused or stopped. `start()` clears graph-scoped variables and the runtime’s fallback entity-variable table. Variables stored by the ECS are left alone.
 
-Call `runtime.loadProgram(program)` from generated JavaScript so a shipped game does not need to compile.
+`reload(doc)` recompiles and swaps the program. Graph variables and entity variables stay. The in-flight stack, delays, and pause are dropped, and OnStart does not run again. If the compile fails, the previous program and variables stay.
+
+A node that throws, a data cycle, or a turn that exceeds the step budget is reported as `{ nodeId, message, error }` through `runtime.nodeErrors` and `onNodeError`. Play mode stays `running`. `start()` with no program still throws `ScriptRuntimeError` (`no-program`).
+
+Shipped games call `createRuntime(options)` from the generated module. That builds a `createScriptHost` session and does not include the interpreter. Hot reload and breakpoints stay on the Play-mode runtime.
+
+## TypeScript scripts
+
+```ts
+const spin = defineScript({
+  typeId: 'game/Spin',
+  category: 'game',
+  doc: 'Adds dt to angle.',
+  run(ctx) {
+    ctx.setVariable('angle', ctx.num(ctx.getVariable('angle')) + ctx.dt);
+  },
+});
+spin.register(registry);
+```
+
+Plain scripts get an exec input and a `then` output. `then` runs unless `ctx.follow` was called. Custom nodes pass their own `pins` and can implement `value(ctx, pin)`. `hidden: true` is required when there is no `run` or `value`, and it keeps the node out of the palette.
+
+`paletteNodes(registry)` lists visible definitions. `paletteGaps(registry)` lists visible nodes that have no handler. Every built-in node has a handler and is not hidden, so the built-in registry has no gaps.
+
+In a shipped game, call `defineScript` from `@jurfi/script/host` so the compiled host and the script share one registry. Play mode resolves `defineScript` from `@jurfi/script`.
 
 ## Debug
 
@@ -75,19 +100,14 @@ Attach a `DebugSource` to receive events. Nothing is allocated for those events 
 | `core/Self`, `core/GetComponent`, `core/SetComponent`, `core/GetField`, `core/SetField` | Entity and component access through `ScriptWorld`. Unconnected entity pins use `world.self`. |
 | `core/Subgraph` | Runs `props.graph` from **this document’s** `subgraphs`, starting at that graph’s `core/OnStart` nodes, then continues. |
 
-A type that is registered but has no script handler compiles with an `unimplemented-node` warning. At runtime its exec pin `then` is followed and its data outputs are `undefined`.
+A type that is registered but has no script handler compiles with an `unimplemented-node` warning. At runtime its exec pin `then` is followed and its data outputs are `undefined`. Flag `hidden: true` to keep that node out of the palette.
 
-Loops are structured inside ForLoop and While, so a cycle of exec edges is a compile error. Each `start` / `tick` / `emit` / `resume` stops with `ScriptRuntimeError` (`max-steps`, default 100000) if it exceeds the step budget.
+Loops are structured inside ForLoop and While, so a cycle of exec edges is a compile error. Each `start` / `tick` / `emit` / `resume` records a `max-steps` fault (default 100000) and ends that turn. The session stays running.
 
-## Gap: `@jurfi/core` has no ECS
+## ECS
 
-`@jurfi/core` currently exports `VERSION`, `Disposable`, and `clamp` only. `createScriptRuntime` implements `Disposable`. `core/Clamp` uses `clamp`.
+`createScriptRuntime` implements `Disposable` from `@jurfi/core`. `core/Clamp` uses `clamp`. Components, fields, and per-entity variables go through `createScriptWorld`. `coreGaps.missing` is empty.
 
-Everything about entities is the `ScriptWorld` adapter (`coreGaps` lists the missing surface):
+`World` can also spawn, destroy, remove components, and query. Visual scripts have no nodes for those yet.
 
-- entity id and storage
-- component get / set / has
-- component field get / set
-- per-entity variable storage
-
-`createMemoryWorld` is a test stand-in, not the engine world. If `getField` / `setField` or `getVariable` / `setVariable` are omitted, the runtime falls back to component-object fields and a side table keyed by `entity.id`. World-backed entity variables are not cleared by `start()`, so an ECS adapter can own that data.
+`createMemoryWorld` is only a test stand-in. If `getField` / `setField` or `getVariable` / `setVariable` are omitted on a custom world, the runtime falls back to component-object fields and a side table keyed by `entity.id`. World-backed entity variables are not cleared by `start()` or `reload`.

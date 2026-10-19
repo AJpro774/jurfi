@@ -44,7 +44,9 @@ describe('compile', () => {
     expect(result.program?.nodes.set?.execOut).toEqual({});
     expect(JSON.stringify(result.program)).not.toContain('EDITOR_ONLY_NOTE');
     expect(result.source).not.toContain('from "@jurfi/editor"');
-    expect(result.source).toContain('from "@jurfi/script"');
+    expect(result.source).toContain('from "@jurfi/script/host"');
+    expect(result.source).not.toContain('createScriptRuntime');
+    expect(result.source).not.toContain('JURFI_INTERPRETER_RUNTIME');
     expect(result.source).not.toContain('@jurfi/core');
     expect(programJson(result.source)).toEqual(result.program);
     expect(doc.nodes[0]?.pos).toEqual({ x: 0, y: 0 });

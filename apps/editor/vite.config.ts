@@ -12,6 +12,10 @@ export default defineConfig({
         find: /^@jurfi\/editor$/,
         replacement: fileURLToPath(new URL('../../packages/editor/src/index.ts', import.meta.url)),
       },
+      {
+        find: /^@jurfi\/script$/,
+        replacement: fileURLToPath(new URL('../../packages/script/src/index.ts', import.meta.url)),
+      },
     ],
   },
   server: { host: true, port: 5173 },

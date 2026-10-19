@@ -1,5 +1,6 @@
-import type { Disposable } from '@jurfi/core';
+import { createScriptWorld, createWorld, type Disposable } from '@jurfi/core';
 import { compile } from './compile';
+import { faultMessage, NODE_FAULT_CAP, type NodeFault } from './fault';
 import type { ExecHost } from './handlers';
 import { getNodeHandler } from './handlers';
 import type { CompiledNode, CompiledProgram, CompileResult } from './ir';
@@ -7,7 +8,6 @@ import type { NodeRegistry } from './registry';
 import type { GraphDoc, VariableScope } from './schema';
 import { createBuiltinRegistry } from './builtins';
 import type { EntityRef, ScriptWorld } from './world';
-import { createMemoryWorld } from './world';
 
 export type DebugPhase = 'enter' | 'exit';
 
@@ -45,12 +45,14 @@ export class ScriptRuntimeError extends Error {
 }
 
 export interface ScriptRuntimeOptions {
-  /** Scene adapter. Defaults to an in-memory world with `self.id === 'self'`. */
+  /** Scene adapter. Defaults to `createScriptWorld(createWorld())`. */
   world?: ScriptWorld;
   /** Defaults to the built-in script registry. */
   registry?: NodeRegistry;
   /** Safety cap for one start, tick, emit, or resume. Default 100000. */
   maxSteps?: number;
+  /** Called when a node throws or a turn exceeds `maxSteps`. Play mode does not rethrow. */
+  onNodeError?: (fault: NodeFault) => void;
 }
 
 /**
@@ -62,8 +64,16 @@ export interface ScriptRuntime extends Disposable {
   readonly registry: NodeRegistry;
   readonly paused: boolean;
   readonly running: boolean;
+  readonly nodeErrors: readonly NodeFault[];
   load(doc: GraphDoc): CompileResult;
   loadProgram(program: CompiledProgram): void;
+  /**
+   * Recompile `doc` and swap it in. Keeps graph and entity variables.
+   * Drops the in-flight stack, delays, and pause. Does not replay OnStart.
+   * A failed compile leaves the current program and variables in place.
+   */
+  reload(doc: GraphDoc): CompileResult;
+  clearNodeErrors(): void;
   start(): void;
   /** Advances simulated time. Ignored until `start`, and while paused. */
   tick(dt: number): void;
@@ -144,6 +154,11 @@ class Engine implements ExecHost, ScriptRuntime {
   private readonly reading = new Set<string>();
   private readonly breakpoints = new Set<string>();
 
+  private readonly onNodeError?: (fault: NodeFault) => void;
+  private readonly faults: NodeFault[] = [];
+  /** Set when a turn must stop (step cap or a data cycle). Ordinary node errors do not set this. */
+  private aborted = false;
+
   private source: DebugSource | null = null;
   /** True only while a DebugSource is attached. Gates every event allocation. */
   private trace = false;
@@ -154,8 +169,9 @@ class Engine implements ExecHost, ScriptRuntime {
   private depth = 0;
 
   constructor(options: ScriptRuntimeOptions = {}) {
-    this.world = options.world ?? createMemoryWorld();
+    this.world = options.world ?? createScriptWorld(createWorld());
     this.registry = options.registry ?? createBuiltinRegistry();
+    this.onNodeError = options.onNodeError;
     const requested = options.maxSteps;
     this.maxSteps =
       typeof requested === 'number' && requested > 0 ? Math.floor(requested) : DEFAULT_MAX_STEPS;
@@ -173,6 +189,32 @@ class Engine implements ExecHost, ScriptRuntime {
     this.program = program;
   }
 
+  reload(doc: GraphDoc): CompileResult {
+    const result = compile(doc, this.registry);
+    if (!result.ok || !result.program) return result;
+    this.program = result.program;
+    this.stack.length = 0;
+    this.delays = [];
+    this.paused = false;
+    this.pauseRequested = false;
+    this.stepBudget = 0;
+    this.resumeSkip = undefined;
+    this.loopValues.clear();
+    this.payloads.clear();
+    this.reading.clear();
+    this.aborted = false;
+    this.active = null;
+    return result;
+  }
+
+  get nodeErrors(): readonly NodeFault[] {
+    return this.faults;
+  }
+
+  clearNodeErrors(): void {
+    this.faults.length = 0;
+  }
+
   start(): void {
     if (!this.program) throw new ScriptRuntimeError('No graph loaded', 'no-program');
     this.stack.length = 0;
@@ -182,6 +224,8 @@ class Engine implements ExecHost, ScriptRuntime {
     this.loopValues.clear();
     this.payloads.clear();
     this.reading.clear();
+    this.faults.length = 0;
+    this.aborted = false;
     this.running = true;
     this.paused = false;
     this.pauseRequested = false;
@@ -221,6 +265,7 @@ class Engine implements ExecHost, ScriptRuntime {
     this.entityVars.clear();
     this.loopValues.clear();
     this.payloads.clear();
+    this.faults.length = 0;
   }
 
   emit(eventName: string, payload?: unknown): void {
@@ -306,6 +351,7 @@ class Engine implements ExecHost, ScriptRuntime {
   }
 
   follow(node: CompiledNode, pin: string): void {
+    if (this.aborted) return;
     const links = node.execOut[pin];
     if (!links || links.length === 0) return;
     const active = this.live();
@@ -380,6 +426,7 @@ class Engine implements ExecHost, ScriptRuntime {
   }
 
   scheduleFor(node: CompiledNode, first: number, last: number): void {
+    if (this.aborted) return;
     this.stack.push({
       kind: 'for',
       program: this.live(),
@@ -391,6 +438,7 @@ class Engine implements ExecHost, ScriptRuntime {
   }
 
   scheduleWhile(node: CompiledNode): void {
+    if (this.aborted) return;
     this.stack.push({
       kind: 'while',
       program: this.live(),
@@ -400,6 +448,7 @@ class Engine implements ExecHost, ScriptRuntime {
   }
 
   scheduleDelay(seconds: number, node: CompiledNode): void {
+    if (this.aborted) return;
     const links = node.execOut.then;
     if (!links || links.length === 0) return;
     if (seconds <= 0) {
@@ -420,6 +469,7 @@ class Engine implements ExecHost, ScriptRuntime {
   }
 
   fire(name: string, payload: unknown): void {
+    if (this.aborted) return;
     const active = this.live();
     const ids = active.entries.event[name] ?? [];
     for (let i = ids.length - 1; i >= 0; i -= 1) {
@@ -441,6 +491,7 @@ class Engine implements ExecHost, ScriptRuntime {
   }
 
   enterSubgraph(graphId: string): void {
+    if (this.aborted) return;
     const child = this.live().subgraphs[graphId];
     if (!child) return;
     this.queue(child, `${this.scope}/${graphId}`, child.entries.start);
@@ -493,6 +544,7 @@ class Engine implements ExecHost, ScriptRuntime {
   }
 
   private queue(program: CompiledProgram, scope: string, ids: readonly string[]): void {
+    if (this.aborted) return;
     for (let i = ids.length - 1; i >= 0; i -= 1) {
       const nodeId = ids[i];
       if (nodeId === undefined) continue;
@@ -526,17 +578,15 @@ class Engine implements ExecHost, ScriptRuntime {
 
   private run(): void {
     this.depth += 1;
+    this.aborted = false;
     try {
       if (this.instrumented()) this.runInstrumented();
       else this.runFast();
     } catch (error) {
       this.reading.clear();
       this.stack.length = 0;
-      this.running = false;
-      this.paused = false;
-      this.pauseRequested = false;
-      this.stepBudget = 0;
-      throw error;
+      const nodeId = error instanceof ScriptRuntimeError ? error.nodeId ?? '' : '';
+      this.capture(nodeId, error);
     } finally {
       this.depth -= 1;
     }
@@ -556,8 +606,15 @@ class Engine implements ExecHost, ScriptRuntime {
   private runFast(): void {
     const stack = this.stack;
     while (stack.length > 0) {
+      if (this.aborted) {
+        stack.length = 0;
+        break;
+      }
       this.steps += 1;
-      if (this.steps > this.maxSteps) this.overflow(stack[stack.length - 1]);
+      if (this.steps > this.maxSteps) {
+        this.overflow(stack[stack.length - 1]);
+        break;
+      }
       const frame = stack.pop();
       if (frame) this.applyFrame(frame);
     }
@@ -566,10 +623,17 @@ class Engine implements ExecHost, ScriptRuntime {
   private runInstrumented(): void {
     const stack = this.stack;
     while (stack.length > 0) {
+      if (this.aborted) {
+        stack.length = 0;
+        break;
+      }
       this.steps += 1;
       const top = stack[stack.length - 1];
       if (!top) break;
-      if (this.steps > this.maxSteps) this.overflow(top);
+      if (this.steps > this.maxSteps) {
+        this.overflow(top);
+        break;
+      }
       if (top.kind === 'node' && this.breakBefore(top.nodeId)) {
         this.paused = true;
         return;
@@ -583,6 +647,10 @@ class Engine implements ExecHost, ScriptRuntime {
         this.source?.onEvent({ kind: 'node', nodeId: frame.nodeId, phase: 'enter' });
       }
       this.applyFrame(frame);
+      if (this.aborted) {
+        stack.length = 0;
+        break;
+      }
       if (frame.kind === 'node' && this.trace) {
         this.source?.onEvent({ kind: 'node', nodeId: frame.nodeId, phase: 'exit' });
       }
@@ -613,30 +681,44 @@ class Engine implements ExecHost, ScriptRuntime {
     return false;
   }
 
-  private overflow(frame: Frame | undefined): never {
-    throw new ScriptRuntimeError(
-      `Exceeded ${this.maxSteps} script steps`,
-      'max-steps',
-      frame?.nodeId,
+  private overflow(frame: Frame | undefined): void {
+    const nodeId = frame?.nodeId ?? '';
+    this.capture(
+      nodeId,
+      new ScriptRuntimeError(`Exceeded ${this.maxSteps} script steps`, 'max-steps', nodeId || undefined),
     );
+    this.aborted = true;
+    this.stack.length = 0;
+    this.reading.clear();
+  }
+
+  private capture(nodeId: string, error: unknown): void {
+    const fault: NodeFault = { nodeId, message: faultMessage(error), error };
+    if (this.faults.length < NODE_FAULT_CAP) this.faults.push(fault);
+    this.onNodeError?.(fault);
   }
 
   private applyFrame(frame: Frame): void {
+    if (this.aborted) return;
     this.active = frame.program;
     this.scope = frame.scope;
-    if (frame.kind === 'for') {
-      this.stepFor(frame);
-      return;
+    try {
+      if (frame.kind === 'for') {
+        this.stepFor(frame);
+        return;
+      }
+      if (frame.kind === 'while') {
+        this.stepWhile(frame);
+        return;
+      }
+      const node = frame.program.nodes[frame.nodeId];
+      if (!node) return;
+      const handler = getNodeHandler(node.typeId);
+      if (handler?.exec) handler.exec(this, node);
+      else this.follow(node, 'then');
+    } catch (error) {
+      this.capture(frame.nodeId, error);
     }
-    if (frame.kind === 'while') {
-      this.stepWhile(frame);
-      return;
-    }
-    const node = frame.program.nodes[frame.nodeId];
-    if (!node) return;
-    const handler = getNodeHandler(node.typeId);
-    if (handler?.exec) handler.exec(this, node);
-    else this.follow(node, 'then');
   }
 
   private stepFor(frame: ForFrame): void {
@@ -654,7 +736,9 @@ class Engine implements ExecHost, ScriptRuntime {
   private stepWhile(frame: WhileFrame): void {
     const node = frame.program.nodes[frame.nodeId];
     if (!node) return;
-    if (this.truthy(this.read(node, 'condition'))) {
+    const condition = this.truthy(this.read(node, 'condition'));
+    if (this.aborted) return;
+    if (condition) {
       this.stack.push({ ...frame });
       this.follow(node, 'body');
     } else {
@@ -665,21 +749,38 @@ class Engine implements ExecHost, ScriptRuntime {
   private evalOutput(nodeId: string, pin: string): unknown {
     const token = `${nodeId}\0${pin}`;
     if (this.reading.has(token)) {
-      throw new ScriptRuntimeError(
+      const error = new ScriptRuntimeError(
         `Data cycle while reading node "${nodeId}" pin "${pin}"`,
         'data-cycle',
         nodeId,
       );
+      this.capture(nodeId, error);
+      this.aborted = true;
+      this.stack.length = 0;
+      this.reading.clear();
+      return undefined;
     }
     this.reading.add(token);
     try {
       const node = this.live().nodes[nodeId];
       if (!node) return undefined;
       return getNodeHandler(node.typeId)?.value?.(this, node, pin);
+    } catch (error) {
+      this.capture(nodeId, error);
+      if (error instanceof ScriptRuntimeError && (error.code === 'max-steps' || error.code === 'data-cycle')) {
+        this.aborted = true;
+        this.stack.length = 0;
+      }
+      return undefined;
     } finally {
       this.reading.delete(token);
     }
   }
+}
+
+/** Marker kept in the interpreter bundle. Compiled host output must not contain this string. */
+export function interpreterBuild(): string {
+  return 'JURFI_INTERPRETER_RUNTIME';
 }
 
 /** Entry point for editor Play mode: load docs, start, tick, stop. */
