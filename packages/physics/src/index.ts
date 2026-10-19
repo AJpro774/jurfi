@@ -1,9 +1,8 @@
-import { clamp } from '@jurfi/core';
+export { clampPos, overlaps } from './aabb';
+export type { Aabb } from './aabb';
 
-export interface Aabb { x: number; y: number; w: number; h: number }
+export { COLLIDER_SHAPES, Collider, RIGID_BODY_TYPES, RigidBody } from './components';
+export type { ColliderShape, RigidBodyKind } from './components';
 
-export function overlaps(a: Aabb, b: Aabb): boolean {
-  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
-}
-
-export const clampPos = clamp;
+export { DEFAULT_FIXED_DT, DEFAULT_GRAVITY, PhysicsWorld } from './world';
+export type { PhysicsWorldOptions, RaycastFilter, RaycastHit } from './world';

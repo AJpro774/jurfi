@@ -1,8 +1,11 @@
+import { createEditorWorld } from '@jurfi/core';
 import { createEditorBus, type EditorBus, type GizmoMode, type PlayState } from './bus';
 import { createCommandRegistry, type CommandRegistry } from './commands';
+import { playbackClip, playbackGraph } from './playback';
+import { createPlaySession } from './play-runtime';
 import { createSelection, type Selection } from './selection';
 import { createUndoStack, type UndoStack } from './undo';
-import { createWorld, type EditorWorld, type WorldSnapshot } from './world';
+import { createDefaultSnapshot, type EditorWorld, type WorldSnapshot } from './world';
 
 /**
  * Handle passed to every panel `mount` and to editor commands.
@@ -11,7 +14,7 @@ import { createWorld, type EditorWorld, type WorldSnapshot } from './world';
  * `undo` is the reversible edit stack (`push` / `undo` / `redo`).
  */
 export interface EditorContext {
-  /** Serializable scene document. `@jurfi/core` does not export an ECS world yet; this is the document panels read and write. */
+  /** Scene world. The default is the core ECS (`createEditorWorld`); string ids are stable aliases. */
   readonly world: EditorWorld;
   readonly selection: Selection;
   readonly undo: UndoStack;
@@ -21,10 +24,12 @@ export interface EditorContext {
   /** Snapshot the world on the way in from editing. Further calls while paused resume without a new snapshot. */
   play(): void;
   pause(): void;
-  /** Restore the snapshot taken when play began and return to editing. */
+  /** Restore the snapshot taken when play began, dispose the physics world, and return to editing. */
   stop(): void;
-  /** Enter paused play (snapshotting if needed) and emit `play:step`. No runtime is ticked yet. */
-  step(): void;
+  /** Snapshot if still editing, run one play tick, and leave the session paused. */
+  step(): Promise<void>;
+  /** Stop the play session and free its physics world. */
+  dispose(): void;
   getGizmoMode(): GizmoMode;
   setGizmoMode(mode: GizmoMode): void;
 }
@@ -33,8 +38,15 @@ export interface EditorContextOptions {
   world?: EditorWorld;
 }
 
+function createDefaultEditorWorld(): EditorWorld {
+  const world = createEditorWorld();
+  world.deserialize(createDefaultSnapshot());
+  world.ecs.clearHistory();
+  return world;
+}
+
 export function createEditorContext(options: EditorContextOptions = {}): EditorContext {
-  const world = options.world ?? createWorld();
+  const world = options.world ?? createDefaultEditorWorld();
   const bus = createEditorBus();
   const selection = createSelection();
   const undo = createUndoStack();
@@ -48,6 +60,16 @@ export function createEditorContext(options: EditorContextOptions = {}): EditorC
   });
   world.subscribe(() => {
     bus.emit('world:changed', { snapshot: world.serialize() });
+  });
+
+  const playSession = createPlaySession({
+    world,
+    graph: playbackGraph,
+    clip: playbackClip,
+    onLog(entry) {
+      bus.emit('log', entry);
+      bus.emit('status', { message: entry.message, level: entry.level });
+    },
   });
 
   const commands: CommandRegistry = {
@@ -83,15 +105,18 @@ export function createEditorContext(options: EditorContextOptions = {}): EditorC
       captureSnapshot();
       if (playState === 'playing') return;
       setPlayState('playing');
+      playSession.play();
       bus.emit('status', { message: 'Playing', level: 'info' });
     },
     pause() {
       if (playState !== 'playing') return;
+      playSession.pause();
       setPlayState('paused');
       bus.emit('status', { message: 'Paused', level: 'info' });
     },
     stop() {
       if (playState === 'editing') return;
+      playSession.stop();
       if (playSnapshot) world.deserialize(playSnapshot);
       playSnapshot = null;
       undo.clear();
@@ -102,10 +127,14 @@ export function createEditorContext(options: EditorContextOptions = {}): EditorC
     },
     step() {
       captureSnapshot();
-      if (playState === 'playing') setPlayState('paused');
-      else if (playState === 'editing') setPlayState('paused');
+      const done = playSession.step();
+      if (playState === 'playing' || playState === 'editing') setPlayState('paused');
       bus.emit('play:step', { state: playState });
       bus.emit('status', { message: 'Stepped', level: 'info' });
+      return done;
+    },
+    dispose() {
+      playSession.dispose();
     },
     getGizmoMode: () => gizmo,
     setGizmoMode(mode) {

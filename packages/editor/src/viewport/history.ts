@@ -1,50 +1,108 @@
+import type { Entity, World, WorldChange } from '@jurfi/core';
 import { cloneTransform, transformsClose } from '../math/vec';
 import type { Transform } from '../math/vec';
 import type { UndoCommand } from '../undo';
-import type { EditorWorld } from '../world';
-import { writeTransform } from './components';
+import { applyBaseline, hasTransform, readTransform, writeTransform, type DragBaseline } from './components';
 
-function copyMap(map: ReadonlyMap<string, Transform>): Map<string, Transform> {
-  const next = new Map<string, Transform>();
-  for (const [id, transform] of map) next.set(id, cloneTransform(transform));
-  return next;
+/** Tracks the single ECS history step owned by the gizmo drag in progress. */
+export interface DragSession {
+  active: boolean;
 }
 
 /**
- * One undo step for a finished gizmo drag.
- * The edit is already applied. `push` must not redo it.
- * Returns null when nothing moved.
+ * Keep the drag as one ECS transaction.
+ * Each move undoes the previous preview, then writes every selected transform inside a new transaction.
+ * `batch` publishes one flush, so the inspector sees the latest pose without a per-pixel undo step.
  */
-export function transformUndo(
-  world: EditorWorld,
-  before: ReadonlyMap<string, Transform>,
-  after: ReadonlyMap<string, Transform>,
-  label = 'Transform',
-  absent: ReadonlySet<string> = new Set(),
-): UndoCommand | null {
-  let changed = false;
-  for (const [id, next] of after) {
-    const prev = before.get(id);
-    if (!prev || !transformsClose(prev, next)) {
-      changed = true;
-      break;
+export function previewTransformDrag(
+  ecs: World,
+  label: string,
+  before: ReadonlyMap<Entity, DragBaseline>,
+  after: ReadonlyMap<Entity, Transform>,
+  session: DragSession,
+): void {
+  ecs.batch(() => {
+    if (session.active) {
+      ecs.undo();
+      session.active = false;
     }
-  }
-  if (!changed) return null;
+    let wrote = false;
+    ecs.transaction(label, () => {
+      for (const [entity, start] of before) {
+        const next = after.get(entity);
+        if (!next || !ecs.isAlive(entity)) continue;
+        if (!start.present && transformsClose(start.transform, next)) continue;
+        if (hasTransform(ecs, entity) && transformsClose(readTransform(ecs, entity), next)) continue;
+        writeTransform(ecs, entity, next);
+        wrote = true;
+      }
+    });
+    session.active = wrote;
+  });
+}
 
-  const beforeCopy = copyMap(before);
-  const afterCopy = copyMap(after);
-  const missing = new Set(absent);
-  const apply = (map: ReadonlyMap<string, Transform>): void => {
-    for (const [id, transform] of map) writeTransform(world, id, transform);
-  };
+export function cancelTransformDrag(ecs: World, session: DragSession): void {
+  if (!session.active) return;
+  ecs.undo();
+  session.active = false;
+}
+
+/**
+ * Hand the open transaction to the editor undo stack.
+ * The step is already committed. Undo pops that step when it is still on top,
+ * and otherwise writes the captured pose so a later edit cannot steal the pop.
+ */
+export function finishTransformDrag(
+  ecs: World,
+  label: string,
+  before: ReadonlyMap<Entity, DragBaseline>,
+  session: DragSession,
+): UndoCommand | null {
+  if (!session.active) return null;
+  session.active = false;
+  const start = copyPoses(before);
+  const end = new Map<Entity, DragBaseline>();
+  for (const entity of before.keys()) {
+    if (!ecs.isAlive(entity)) continue;
+    end.set(entity, { present: hasTransform(ecs, entity), transform: readTransform(ecs, entity) });
+  }
   return {
     label,
     undo() {
-      for (const [id, transform] of beforeCopy) writeTransform(world, id, missing.has(id) ? null : transform);
+      stepOrApply(ecs, label, 'undo', start);
     },
     redo() {
-      apply(afterCopy);
+      stepOrApply(ecs, label, 'redo', end);
     },
   };
+}
+
+function copyPoses(source: ReadonlyMap<Entity, DragBaseline>): Map<Entity, DragBaseline> {
+  const copy = new Map<Entity, DragBaseline>();
+  for (const [entity, pose] of source) {
+    copy.set(entity, { present: pose.present, transform: cloneTransform(pose.transform) });
+  }
+  return copy;
+}
+
+function stepOrApply(
+  ecs: World,
+  label: string,
+  kind: 'undo' | 'redo',
+  fallback: ReadonlyMap<Entity, DragBaseline>,
+): void {
+  let matched = false;
+  const off = ecs.onChange((change: WorldChange) => {
+    if (change.kind === kind && change.label === label) matched = true;
+  });
+  const moved = kind === 'undo' ? ecs.undo() : ecs.redo();
+  off();
+  if (moved && matched) return;
+  if (moved) {
+    if (kind === 'undo') ecs.redo();
+    else ecs.undo();
+  }
+  ecs.transaction(label, () => {
+    for (const [entity, pose] of fallback) applyBaseline(ecs, entity, pose);
+  });
 }

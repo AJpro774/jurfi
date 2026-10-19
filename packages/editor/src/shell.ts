@@ -276,6 +276,7 @@ export function createEditor(options: CreateEditorOptions): Editor {
     getLayout: () => layout,
     resetLayout,
     dispose() {
+      ctx.dispose();
       flushAutosave();
       for (const zone of ZONES) mounted.get(zone)?.dispose();
       mounted.clear();

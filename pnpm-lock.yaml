@@ -261,6 +261,9 @@ importers:
       '@jurfi/core':
         specifier: workspace:*
         version: link:../core
+      '@jurfi/physics':
+        specifier: workspace:*
+        version: link:../physics
       '@jurfi/render':
         specifier: workspace:*
         version: link:../render
@@ -355,6 +358,9 @@ importers:
 
   packages/physics:
     dependencies:
+      '@dimforge/rapier3d-compat':
+        specifier: ^0.21.0
+        version: 0.21.0
       '@jurfi/core':
         specifier: workspace:*
         version: link:../core
@@ -709,6 +715,9 @@ packages:
 
   '@dimforge/rapier3d-compat@0.12.0':
     resolution: {integrity: sha512-uekIGetywIgopfD97oDL5PfeezkFpNhwlzlaEYNOA0N6ghdsOvh/HYjSMek5Q2O1PYvRSDFcqFVJl4r4ZBwOow==}
+
+  '@dimforge/rapier3d-compat@0.21.0':
+    resolution: {integrity: sha512-tCl1HPGwOhn5aCQbgqWbOH+Nx/5fnr3IPAnzQuR7zIhC/raqi2yxC6LhvZqjdI2El5hQgY5RDAwDrAjAi2FdPA==}
 
   '@esbuild/aix-ppc64@0.28.2':
     resolution: {integrity: sha512-XExcO+dvLKvVtNTibSTBej1NCAbaGhWn9Ww1ZPx80qsahhPFe/8jgWP0IchNe0F3HwkU7n8ejhH8bjonqht8mQ==}
@@ -2862,6 +2871,8 @@ snapshots:
       postcss-selector-parser: 7.1.6
 
   '@dimforge/rapier3d-compat@0.12.0': {}
+
+  '@dimforge/rapier3d-compat@0.21.0': {}
 
   '@esbuild/aix-ppc64@0.28.2':
     optional: true

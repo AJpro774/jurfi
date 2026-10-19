@@ -153,13 +153,16 @@ interface EditorCommand {
 | `project:saved` | `{ name: string }` |
 | `project:loaded` | `{ name: string }` |
 | `status` | `{ message: string; level: 'info' \| 'warn' \| 'error' }` |
+| `log` | `{ level: 'info' \| 'warn' \| 'error'; message: string; source?: string }` |
 | `command:executed` | `{ id: string }` |
 
 Other string event names are allowed; their payload is `unknown` unless you agree on a shape with the listener.
 
 ### Play mode
 
-`play()` stores `world.serialize()` the first time the session leaves editing, then sets the state to `playing`. `pause()` only applies while playing. `play()` from paused resumes and keeps the original snapshot. `stop()` deserializes that snapshot, clears the undo stack, and returns to `editing`. When the world is the `@jurfi/core` adapter, that snapshot includes packed entity ids, per-entity variables, and the generation table, so `stop()` restores the same numeric ids and variables that were current when play began. `step()` snapshots if needed, forces `paused`, and emits `play:step`. Nothing in the shell ticks a game loop; the snapshot boundary is the scaffold a runtime can hook.
+`play()` stores `world.serialize()` the first time the session leaves editing, then sets the state to `playing` and starts a frame loop. Each frame ticks the script runtime against `EditorContext.world` (the core `createScriptWorld` adapter when `world.ecs` exists), advances the timeline `ClipPlayer` and writes sampled tracks onto entity components, then steps a Rapier `PhysicsWorld` on that core world: `ecs.time.tick(dt)` followed by `physics.step(ecs.time.delta)`. The world is created once per play session (`gravity: [0, -9.81, 0]`, `fixedDt: 1 / 60`) and attached to `world.ecs`. `pause()` freezes the loop and keeps the physics world. `play()` from paused resumes it and keeps the original snapshot. `stop()` stops the runtime, calls `physics.destroy()`, deserializes the snapshot, clears the undo stack, and returns to `editing`. `dispose()` frees the same physics world without restoring a snapshot. Script failures emit `log` and `status` at level `error` and do not rethrow. `step()` runs one tick and leaves the session paused.
+
+The demo Player is a dynamic box and the Ground is a fixed box, so Play drops the player onto the floor. `ClipPlayer` samples tracks but does not write the ECS; the editor applies `TrackTarget` onto the entity component bag, and a sample clip that targets `hero` does not match the demo scene. Spawn, destroy, and queries need `world.ecs`. A headless `EditorWorld` with no `ecs` skips physics. Poses are local: parented bodies are not composed into world space, and `Transform.scale` does not resize a collider (the ground collider half-extents are authored to match the visual plane). Each physics write is an ECS history step until Stop's deserialize clears that history.
 
 ## Shell
 
