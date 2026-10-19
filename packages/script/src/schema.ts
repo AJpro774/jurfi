@@ -6,7 +6,7 @@ export const GRAPH_VERSION = 1 as const;
 export const PIN_KINDS = ['exec', 'data'] as const;
 export type PinKind = (typeof PIN_KINDS)[number];
 
-export const DATA_TYPES = ['bool', 'number', 'string', 'entity', 'any'] as const;
+export const DATA_TYPES = ['bool', 'number', 'string', 'entity', 'pose', 'any'] as const;
 export type DataType = (typeof DATA_TYPES)[number];
 
 export const VARIABLE_SCOPES = ['graph', 'entity'] as const;

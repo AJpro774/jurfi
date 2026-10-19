@@ -245,6 +245,23 @@ describe('scene, time, plugins, and render scene', () => {
     expect(seen).toEqual(['created', 'added', 'changed', 'destroyed']);
   });
 
+  it('withoutHistory writes the world and leaves undo empty', () => {
+    const world = createWorld();
+    const entity = world.create();
+    world.add(entity, Transform);
+    world.clearHistory();
+    world.withoutHistory(() => {
+      world.setField(entity, Transform, 'position.x', 3);
+    });
+    expect(world.getField(entity, Transform, 'position.x')).toBe(3);
+    expect(world.canUndo()).toBe(false);
+    world.setField(entity, Transform, 'position.y', 4);
+    expect(world.canUndo()).toBe(true);
+    expect(world.undo()).toBe(true);
+    expect(world.getField(entity, Transform, 'position.y')).toBe(0);
+    expect(world.getField(entity, Transform, 'position.x')).toBe(3);
+  });
+
   it('builds parallel render buffers from Transform and keeps Light2D separate', () => {
     const world = createWorld();
     const root = world.create();

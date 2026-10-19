@@ -6,6 +6,7 @@
   --ng-pin-vec2: var(--ref-accent-200);
   --ng-pin-vec3: var(--ref-accent-300);
   --ng-pin-object: var(--text-2);
+  --ng-pin-pose: var(--ref-red-300);
   --ng-pin-any: var(--text-3);
   --ng-cat: var(--border-strong);
 
@@ -200,6 +201,10 @@
 
 .ng-wire[data-type='object'] {
   stroke: var(--ng-pin-object);
+}
+
+.ng-wire[data-type='pose'] {
+  stroke: var(--ng-pin-pose);
 }
 
 .ng-wire[data-type='any'] {
@@ -404,6 +409,10 @@
 
 .ng-pin[data-type='object'] {
   background: var(--ng-pin-object);
+}
+
+.ng-pin[data-type='pose'] {
+  background: var(--ng-pin-pose);
 }
 
 .ng-pin[data-type='any'] {

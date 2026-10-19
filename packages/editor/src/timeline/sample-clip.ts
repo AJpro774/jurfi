@@ -1,12 +1,15 @@
 import type { Clip } from '@jurfi/anim';
 import { eulerDegreesToQuat } from './euler';
 
-/** A small clip that exercises scalar channels, one whole color, and one whole quaternion. */
+/**
+ * A small clip that exercises scalar channels, one whole color, and one whole quaternion.
+ * Targets the demo scene: `player` (box) and `light`.
+ */
 export function createSampleClip(): Clip {
   return {
     version: 1,
-    id: 'hero-intro',
-    name: 'Hero Intro',
+    id: 'player-intro',
+    name: 'Player Intro',
     duration: 2,
     fps: 30,
     loop: true,
@@ -14,7 +17,7 @@ export function createSampleClip(): Clip {
     tracks: [
       {
         id: 'pos-x',
-        target: { entity: 'hero', component: 'transform', prop: 'position', channel: 0 },
+        target: { entity: 'player', component: 'Transform', prop: 'position', channel: 0 },
         type: 'number',
         keys: [
           { t: 0, v: -1, interp: 'bezier', outTan: { dt: 0.25, dv: 0.8 } },
@@ -24,7 +27,7 @@ export function createSampleClip(): Clip {
       },
       {
         id: 'pos-y',
-        target: { entity: 'hero', component: 'transform', prop: 'position', channel: 1 },
+        target: { entity: 'player', component: 'Transform', prop: 'position', channel: 1 },
         type: 'number',
         keys: [
           { t: 0, v: 0, interp: 'linear' },
@@ -35,7 +38,7 @@ export function createSampleClip(): Clip {
       },
       {
         id: 'pos-z',
-        target: { entity: 'hero', component: 'transform', prop: 'position', channel: 2 },
+        target: { entity: 'player', component: 'Transform', prop: 'position', channel: 2 },
         type: 'number',
         keys: [
           { t: 0, v: 0, interp: 'linear' },
@@ -44,7 +47,7 @@ export function createSampleClip(): Clip {
       },
       {
         id: 'rot',
-        target: { entity: 'hero', component: 'transform', prop: 'rotation' },
+        target: { entity: 'player', component: 'Transform', prop: 'rotation' },
         type: 'quat',
         keys: [
           { t: 0, v: [0, 0, 0, 1], interp: 'linear' },
@@ -53,7 +56,7 @@ export function createSampleClip(): Clip {
       },
       {
         id: 'tint',
-        target: { entity: 'hero', component: 'sprite', prop: 'color' },
+        target: { entity: 'light', component: 'Light', prop: 'color' },
         type: 'color',
         keys: [
           { t: 0, v: [1, 1, 1, 1], interp: 'bezier', outTan: { dt: 0.4, dv: 0 } },
