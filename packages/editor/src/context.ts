@@ -1,5 +1,6 @@
 import { createEditorBus, type EditorBus, type GizmoMode, type PlayState } from './bus';
 import { createCommandRegistry, type CommandRegistry } from './commands';
+import { ecsHistory } from './ecs-history';
 import { createSelection, type Selection } from './selection';
 import { createUndoStack, type UndoStack } from './undo';
 import { createWorld, type EditorWorld, type WorldSnapshot } from './world';
@@ -37,11 +38,13 @@ export function createEditorContext(options: EditorContextOptions = {}): EditorC
   const world = options.world ?? createWorld();
   const bus = createEditorBus();
   const selection = createSelection();
-  const undo = createUndoStack();
+  const history = ecsHistory(world);
+  const undo = createUndoStack(history);
   const registry = createCommandRegistry();
   let playState: PlayState = 'editing';
   let gizmo: GizmoMode = 'translate';
   let playSnapshot: WorldSnapshot | null = null;
+  let playUndoMark = 0;
 
   selection.subscribe((ids) => {
     bus.emit('selection:changed', { ids });
@@ -69,7 +72,10 @@ export function createEditorContext(options: EditorContextOptions = {}): EditorC
   };
 
   const captureSnapshot = (): void => {
-    if (playState === 'editing') playSnapshot = world.serialize();
+    if (playState !== 'editing') return;
+    playSnapshot = world.serialize();
+    playUndoMark = undo.checkpoint();
+    history?.suspendHistory();
   };
 
   return {
@@ -92,9 +98,10 @@ export function createEditorContext(options: EditorContextOptions = {}): EditorC
     },
     stop() {
       if (playState === 'editing') return;
-      if (playSnapshot) world.deserialize(playSnapshot);
+      history?.resumeHistory();
+      if (playSnapshot) world.deserialize(playSnapshot, { preserveHistory: true });
       playSnapshot = null;
-      undo.clear();
+      undo.revertTo(playUndoMark);
       const keep = selection.get().filter((id) => world.get(id) !== undefined);
       if (keep.length !== selection.get().length) selection.set(keep);
       setPlayState('editing');

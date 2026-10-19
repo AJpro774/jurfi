@@ -1,4 +1,5 @@
 import type { EditorContext } from '../context';
+import { editWithHistory } from '../ecs-history';
 import type { EntityRecord, WorldSnapshot } from '../world';
 import { componentSchema } from './components';
 import { FLAGS_KEY, isRecord, readFlags } from './flags';
@@ -45,8 +46,9 @@ export function renameEntity(ctx: EditorContext, id: string, name: string): bool
   const entity = ctx.world.get(id);
   if (!entity || readFlags(entity.components).locked || entity.name === name) return false;
   const previous = entity.name;
-  ctx.world.update(id, { name });
-  ctx.undo.push({
+  editWithHistory(ctx, 'Rename', () => {
+    ctx.world.update(id, { name });
+  }, {
     label: 'Rename',
     mergeKey: `entity:${id}:name`,
     undo: () => ctx.world.update(id, { name: previous }),
@@ -62,9 +64,11 @@ export function setFlag(ctx: EditorContext, id: string, key: 'visible' | 'locked
   if (flags[key] === value) return false;
   const before = entity.components;
   const components = { ...entity.components, [FLAGS_KEY]: { ...flags, [key]: value } };
-  ctx.world.update(id, { components });
-  ctx.undo.push({
-    label: key === 'visible' ? 'Toggle visibility' : 'Toggle lock',
+  const label = key === 'visible' ? 'Toggle visibility' : 'Toggle lock';
+  editWithHistory(ctx, label, () => {
+    ctx.world.update(id, { components });
+  }, {
+    label,
     undo: () => ctx.world.update(id, { components: before }),
     redo: () => ctx.world.update(id, { components }),
   });
@@ -102,12 +106,15 @@ export function moveEntity(ctx: EditorContext, id: string, placement: Placement)
   if (sameStructure(snapshot.entities, entities)) return false;
 
   const next: WorldSnapshot = { entities };
-  ctx.world.deserialize(next);
+  const restore = (document: WorldSnapshot): void => {
+    ctx.world.deserialize(document, { preserveHistory: true });
+  };
+  restore(next);
   const after = ctx.world.serialize();
   ctx.undo.push({
     label: 'Move entity',
-    undo: () => ctx.world.deserialize(snapshot),
-    redo: () => ctx.world.deserialize(after),
+    undo: () => restore(snapshot),
+    redo: () => restore(after),
   });
   return true;
 }
@@ -142,8 +149,9 @@ export function writeComponentField(
     after.set(id, mirrorViewportTransform(type, nextComponents));
   }
   if (before.size === 0) return false;
-  for (const [id, components] of after) ctx.world.update(id, { components });
-  ctx.undo.push({
+  editWithHistory(ctx, `Edit ${key}`, () => {
+    for (const [id, components] of after) ctx.world.update(id, { components });
+  }, {
     label: `Edit ${key}`,
     mergeKey,
     undo() {
@@ -167,8 +175,9 @@ export function writeLooseField(
   if (!entity || readFlags(entity.components).locked || sameValue(entity.components[key], value)) return false;
   const before = entity.components;
   const components = { ...entity.components, [key]: value };
-  ctx.world.update(id, { components });
-  ctx.undo.push({
+  editWithHistory(ctx, `Edit ${key}`, () => {
+    ctx.world.update(id, { components });
+  }, {
     label: `Edit ${key}`,
     mergeKey,
     undo: () => ctx.world.update(id, { components: before }),
@@ -189,8 +198,9 @@ export function addComponentType(ctx: EditorContext, ids: readonly string[], typ
     after.set(id, mirrorViewportTransform(type, { ...entity.components, [type]: schema.defaults() }));
   }
   if (before.size === 0) return false;
-  for (const [id, components] of after) ctx.world.update(id, { components });
-  ctx.undo.push({
+  editWithHistory(ctx, `Add ${schema.title}`, () => {
+    for (const [id, components] of after) ctx.world.update(id, { components });
+  }, {
     label: `Add ${schema.title}`,
     undo() {
       for (const [id, components] of before) ctx.world.update(id, { components });
@@ -215,9 +225,11 @@ export function removeComponentType(ctx: EditorContext, ids: readonly string[], 
     after.set(id, components);
   }
   if (before.size === 0) return false;
-  for (const [id, components] of after) ctx.world.update(id, { components });
-  ctx.undo.push({
-    label: `Remove ${schema?.title ?? type}`,
+  const label = `Remove ${schema?.title ?? type}`;
+  editWithHistory(ctx, label, () => {
+    for (const [id, components] of after) ctx.world.update(id, { components });
+  }, {
+    label,
     undo() {
       for (const [id, components] of before) ctx.world.update(id, { components });
     },

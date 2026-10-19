@@ -146,6 +146,7 @@ export class World {
   private readonly changedQueue: ComponentChange[] = [];
   private readonly plugins = new Set<string>();
   private readonly history = new ChangeLog();
+  private historyHolds = 0;
   private notifyDepth = 0;
   private notifyPending = false;
   private disposed = false;
@@ -597,7 +598,7 @@ export class World {
     };
   }
 
-  loadScene(scene: SceneJson): void {
+  loadScene(scene: SceneJson, options?: { preserveHistory?: boolean }): void {
     this.assertOpen();
     if (this.history.openDepth > 0) {
       throw new EcsError('invalid-value', 'Cannot load a scene inside a transaction');
@@ -614,8 +615,8 @@ export class World {
       }
       live.push(row.id);
     }
-    this.history.clear();
-    this.history.suspended = true;
+    if (!options?.preserveHistory) this.history.clear();
+    this.suspendHistory();
     try {
       this.batch(() => {
         this.resetStorage();
@@ -641,7 +642,7 @@ export class World {
         }
       });
     } finally {
-      this.history.suspended = false;
+      this.resumeHistory();
     }
   }
 
@@ -722,6 +723,30 @@ export class World {
   /** Drop undo and redo. Scene loads do this because they replace entity storage. */
   clearHistory(): void {
     this.history.clear();
+  }
+
+  /** Drop redo steps without touching undo. */
+  clearRedo(): void {
+    this.history.clearRedo();
+  }
+
+  /**
+   * Ignore history until a matching `resumeHistory`.
+   * Holds nest. Play mode and gizmo drags use this so temporary edits are not undo steps.
+   */
+  suspendHistory(): void {
+    this.historyHolds += 1;
+    this.history.suspended = true;
+  }
+
+  resumeHistory(): void {
+    if (this.historyHolds === 0) return;
+    this.historyHolds -= 1;
+    if (this.historyHolds === 0) this.history.suspended = false;
+  }
+
+  isHistorySuspended(): boolean {
+    return this.historyHolds > 0;
   }
 
   /**

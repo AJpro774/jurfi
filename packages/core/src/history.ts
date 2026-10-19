@@ -162,6 +162,11 @@ export class ChangeLog {
     this.depth = 0;
   }
 
+  /** Drop redo only. A non-world editor command uses this so the two stacks stay aligned. */
+  clearRedo(): void {
+    this.redoStack.length = 0;
+  }
+
   onChange(listener: (change: WorldChange) => void): () => void {
     this.listeners.add(listener);
     return () => {
