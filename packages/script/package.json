@@ -1,7 +1,7 @@
 {
   "name": "@jurfi/script",
   "version": "0.0.0",
-  "description": "Jurfi script",
+  "description": "Visual scripting compiler and runtime",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
@@ -14,6 +14,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./host": {
+      "types": "./dist/host.d.ts",
+      "import": "./dist/host.js"
     }
   },
   "scripts": {
@@ -26,6 +30,7 @@
     "@jurfi/core": "workspace:*"
   },
   "devDependencies": {
+    "esbuild": "^0.28.2",
     "tsup": "^9.0.0",
     "typescript": "~5.9.3",
     "vitest": "^5.0.5",

@@ -1,9 +1,13 @@
-export type FieldKind = 'number' | 'vec2' | 'vec3' | 'vec4' | 'color' | 'enum' | 'bool' | 'string' | 'asset-ref';
+import { listComponentTypes, type FieldType } from '@jurfi/core';
+
+/** Inspector field kinds. Vector kinds follow `@jurfi/core` `defineComponent` field types. */
+export type FieldKind = 'number' | 'vec2' | 'vec3' | 'vec4' | 'quat' | 'color' | 'bool' | 'string' | 'entity';
 
 export interface FieldSchema {
   key: string;
   label: string;
   kind: FieldKind;
+  lanes: readonly string[];
   options?: readonly string[];
   min?: number;
   max?: number;
@@ -17,25 +21,42 @@ export interface ComponentSchema {
   defaults: () => Record<string, unknown>;
 }
 
-const schemas = new Map<string, ComponentSchema>();
-
-export function defineComponent(schema: ComponentSchema): ComponentSchema {
-  schemas.set(schema.type, schema);
-  return schema;
-}
+const LANES: Record<FieldType, readonly string[]> = {
+  number: [],
+  boolean: [],
+  string: [],
+  entity: [],
+  vec2: ['x', 'y'],
+  vec3: ['x', 'y', 'z'],
+  vec4: ['x', 'y', 'z', 'w'],
+  quat: ['x', 'y', 'z', 'w'],
+  color: ['r', 'g', 'b', 'a'],
+};
 
 export function componentSchema(type: string): ComponentSchema | undefined {
-  return schemas.get(type);
+  return componentSchemas().find((schema) => schema.type === type);
 }
 
+/** Schemas registered with `@jurfi/core` `defineComponent`, including Transform, Light, and Light2D. */
 export function componentSchemas(): readonly ComponentSchema[] {
-  return [...schemas.values()];
+  return listComponentTypes().map((component) => ({
+    type: component.id,
+    title: component.id,
+    fields: Object.entries(component.schema).map(([key, field]) => ({
+      key,
+      label: labelize(key),
+      kind: mapKind(field.type),
+      lanes: LANES[field.type],
+      step: field.type === 'number' || field.type === 'entity' ? 0.1 : undefined,
+    })),
+    defaults: () => defaultsFrom(component.schema),
+  }));
 }
 
 export function vecWidth(kind: FieldKind): number {
   if (kind === 'vec2') return 2;
   if (kind === 'vec3') return 3;
-  if (kind === 'vec4') return 4;
+  if (kind === 'vec4' || kind === 'quat' || kind === 'color') return 4;
   return 0;
 }
 
@@ -46,73 +67,48 @@ export function parseNumberField(raw: string): number | undefined {
   return Number.isFinite(value) ? value : undefined;
 }
 
-export function parseColorField(raw: string): string | undefined {
-  const trimmed = raw.trim();
-  return /^#[0-9a-fA-F]{6}$/.test(trimmed) ? trimmed.toLowerCase() : undefined;
+function mapKind(type: FieldType): FieldKind {
+  if (type === 'boolean') return 'bool';
+  return type;
 }
 
-function vec3(x: number, y: number, z: number): number[] {
-  return [x, y, z];
+function labelize(key: string): string {
+  const spaced = key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[_-]+/g, ' ');
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
-defineComponent({
-  type: 'jurfi.transform',
-  title: 'Transform',
-  fields: [
-    { key: 'position', label: 'Position', kind: 'vec3', step: 0.1 },
-    { key: 'rotation', label: 'Rotation', kind: 'vec3', step: 1 },
-    { key: 'scale', label: 'Scale', kind: 'vec3', step: 0.1 },
-  ],
-  defaults: () => ({ position: vec3(0, 0, 0), rotation: vec3(0, 0, 0), scale: vec3(1, 1, 1) }),
-});
+function defaultsFrom(schema: Readonly<Record<string, { type: FieldType; default?: unknown }>>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, field] of Object.entries(schema)) {
+    out[key] = field.default === undefined ? builtinDefault(field.type) : cloneDefault(field.default);
+  }
+  return out;
+}
 
-defineComponent({
-  type: 'jurfi.camera',
-  title: 'Camera',
-  fields: [
-    { key: 'projection', label: 'Projection', kind: 'enum', options: ['perspective', 'orthographic'] },
-    { key: 'fov', label: 'Field of view', kind: 'number', min: 1, max: 179, step: 1 },
-    { key: 'sensor', label: 'Sensor', kind: 'vec2', step: 0.1 },
-    { key: 'viewport', label: 'Viewport', kind: 'vec4', step: 0.01 },
-  ],
-  defaults: () => ({
-    projection: 'perspective',
-    fov: 50,
-    sensor: [36, 24],
-    viewport: [0, 0, 1, 1],
-  }),
-});
+function cloneDefault(value: unknown): unknown {
+  return Array.isArray(value) ? [...value] : value;
+}
 
-defineComponent({
-  type: 'jurfi.light',
-  title: 'Light',
-  fields: [
-    { key: 'color', label: 'Color', kind: 'color' },
-    { key: 'intensity', label: 'Intensity', kind: 'number', min: 0, step: 0.1 },
-    { key: 'mode', label: 'Mode', kind: 'enum', options: ['directional', 'point', 'spot'] },
-    { key: 'castShadows', label: 'Cast shadows', kind: 'bool' },
-  ],
-  defaults: () => ({ color: '#fff4e0', intensity: 1, mode: 'directional', castShadows: false }),
-});
-
-defineComponent({
-  type: 'jurfi.health',
-  title: 'Health',
-  fields: [
-    { key: 'current', label: 'Current', kind: 'number', step: 1 },
-    { key: 'max', label: 'Max', kind: 'number', min: 0, step: 1 },
-  ],
-  defaults: () => ({ current: 100, max: 100 }),
-});
-
-defineComponent({
-  type: 'jurfi.mesh',
-  title: 'Mesh',
-  fields: [
-    { key: 'mesh', label: 'Mesh', kind: 'asset-ref' },
-    { key: 'tint', label: 'Tint', kind: 'color' },
-    { key: 'shown', label: 'Shown', kind: 'bool' },
-    { key: 'tag', label: 'Tag', kind: 'string' },
-  ],
-  defaults: () => ({ mesh: '', tint: '#ffffff', shown: true, tag: '' }),
-});
+function builtinDefault(type: FieldType): unknown {
+  switch (type) {
+    case 'number':
+    case 'entity':
+      return 0;
+    case 'boolean':
+      return false;
+    case 'string':
+      return '';
+    case 'vec2':
+      return [0, 0];
+    case 'vec3':
+      return [0, 0, 0];
+    case 'vec4':
+      return [0, 0, 0, 0];
+    case 'quat':
+      return [0, 0, 0, 1];
+    case 'color':
+      return [1, 1, 1, 1];
+    default:
+      return 0;
+  }
+}

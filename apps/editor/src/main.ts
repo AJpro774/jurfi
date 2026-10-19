@@ -1,11 +1,13 @@
 import '@jurfi/ui';
 import '@jurfi/editor/shell.css';
 import '@jurfi/editor/panels.css';
+import { createEditorWorld } from '@jurfi/core';
 import {
   createDemoSnapshot,
   createEditor,
-  createWorld,
   registerContentPanels,
+  registerNodeGraphPanel,
+  registerViewportPanel,
   seedDemoLibrary,
   type Editor,
 } from '@jurfi/editor';
@@ -14,13 +16,16 @@ const root = document.querySelector('#app');
 if (!(root instanceof HTMLElement)) throw new Error('Jurfi editor is missing #app');
 const app: HTMLElement = root;
 
-let active: Editor | undefined;
-
+registerViewportPanel();
+registerNodeGraphPanel();
 registerContentPanels();
+
+let active: Editor | undefined;
 
 function boot(): void {
   active?.dispose();
-  const world = createWorld(createDemoSnapshot());
+  const world = createEditorWorld();
+  world.deserialize(createDemoSnapshot());
   active = createEditor({ root: app, world });
   seedDemoLibrary(active.ctx);
   if (active.ctx.selection.get().length === 0 && active.ctx.world.get('player')) {

@@ -4,7 +4,6 @@ import { assetLibrary, type AssetItem } from './assets';
 import {
   componentSchema,
   componentSchemas,
-  parseColorField,
   parseNumberField,
   vecWidth,
   type FieldSchema,
@@ -86,6 +85,7 @@ export function mountInspector(el: HTMLElement, ctx: EditorContext): () => void 
       scroller.append(nameField(primary, allLocked));
       const keys = looseKeys(primary.components);
       if (keys.length > 0) scroller.append(looseSection(primary, keys, allLocked));
+      if (isRecord(primary.components.mesh)) scroller.append(meshSection(primary, allLocked));
     }
 
     for (const schema of componentSchemas()) {
@@ -131,13 +131,12 @@ export function mountInspector(el: HTMLElement, ctx: EditorContext): () => void 
       const value = entity.components[key];
       const kind = typeof value === 'boolean' ? 'bool' : typeof value === 'number' ? 'number' : 'string';
       section.append(fieldControl({
-        schema: { key, label: key, kind },
+        schema: { key, label: key, kind, lanes: [] },
         values: [value],
         disabled,
         assets: [],
         onText: (raw) => commitLoose(entity.id, key, kind, raw),
         onBool: (next) => edit(() => writeLooseField(ctx, entity.id, key, next, `loose:${entity.id}:${key}`)),
-        onEnum: () => undefined,
         onBlur: () => render(),
       }));
     }
@@ -206,7 +205,6 @@ export function mountInspector(el: HTMLElement, ctx: EditorContext): () => void 
       assets,
       onText: (raw) => commitField(type, field, ids, raw),
       onBool: (next) => edit(() => writeComponentField(ctx, ids, type, field.key, next, undefined, mergeKey(ids, type, field.key))),
-      onEnum: (next) => edit(() => writeComponentField(ctx, ids, type, field.key, next, undefined, mergeKey(ids, type, field.key))),
       onBlur: () => render(),
     });
   }
@@ -226,6 +224,7 @@ export function mountInspector(el: HTMLElement, ctx: EditorContext): () => void 
     label.textContent = field.label;
     const axes = document.createElement('div');
     axes.className = 'jp-axes';
+    const labels = field.lanes.length > 0 ? field.lanes : AXES;
     for (let axis = 0; axis < width; axis += 1) {
       const axisValues = values.map((value) => (Array.isArray(value) ? value[axis] : undefined));
       const state = display(axisValues);
@@ -235,8 +234,9 @@ export function mountInspector(el: HTMLElement, ctx: EditorContext): () => void 
       input.inputMode = 'decimal';
       input.spellcheck = false;
       input.disabled = disabled;
-      input.setAttribute('aria-label', `${field.label} ${AXES[axis] ?? axis}`);
-      const note = state.mixed ? mixedNote(`${field.label} ${AXES[axis] ?? axis}`) : null;
+      const axisLabel = String(labels[axis] ?? axis).toUpperCase();
+      input.setAttribute('aria-label', `${field.label} ${axisLabel}`);
+      const note = state.mixed ? mixedNote(`${field.label} ${String(labels[axis] ?? axis).toUpperCase()}`) : null;
       if (note) {
         input.placeholder = 'Mixed';
         input.setAttribute('aria-describedby', note.id);
@@ -253,6 +253,31 @@ export function mountInspector(el: HTMLElement, ctx: EditorContext): () => void 
     }
     wrap.append(label, axes);
     return wrap;
+  }
+
+  function meshSection(entity: EntityRecord, disabled: boolean): HTMLElement {
+    const mesh = isRecord(entity.components.mesh) ? entity.components.mesh : {};
+    const section = document.createElement('section');
+    section.className = 'jp-section';
+    const title = document.createElement('h3');
+    title.className = 'jp-section-title';
+    title.textContent = 'Mesh';
+    const select = document.createElement('select');
+    select.className = 'je-field';
+    select.disabled = disabled;
+    select.setAttribute('aria-label', 'Shape');
+    for (const shape of ['box', 'sphere', 'plane']) {
+      const option = document.createElement('option');
+      option.value = shape;
+      option.textContent = shape;
+      select.append(option);
+    }
+    select.value = typeof mesh.shape === 'string' ? mesh.shape : 'box';
+    select.addEventListener('change', () => {
+      edit(() => writeLooseField(ctx, entity.id, 'mesh', { ...mesh, shape: select.value }, `mesh:${entity.id}:shape`));
+    });
+    section.append(title, select);
+    return section;
   }
 
   function addRow(types: readonly string[], ids: readonly string[], disabled: boolean): HTMLElement {
@@ -280,14 +305,8 @@ export function mountInspector(el: HTMLElement, ctx: EditorContext): () => void 
   }
 
   function commitField(type: string, field: FieldSchema, ids: readonly string[], raw: string): void {
-    if (field.kind === 'number') {
+    if (field.kind === 'number' || field.kind === 'entity') {
       const parsed = parseNumberField(raw);
-      if (parsed === undefined) return;
-      edit(() => writeComponentField(ctx, ids, type, field.key, parsed, undefined, mergeKey(ids, type, field.key)));
-      return;
-    }
-    if (field.kind === 'color') {
-      const parsed = parseColorField(raw);
       if (parsed === undefined) return;
       edit(() => writeComponentField(ctx, ids, type, field.key, parsed, undefined, mergeKey(ids, type, field.key)));
       return;
@@ -313,7 +332,6 @@ function fieldControl(options: {
   assets: readonly AssetItem[];
   onText: (raw: string) => void;
   onBool: (value: boolean) => void;
-  onEnum: (value: string) => void;
   onBlur: () => void;
 }): HTMLElement {
   const wrap = document.createElement('div');
@@ -344,31 +362,6 @@ function fieldControl(options: {
   label.textContent = options.schema.label;
   wrap.append(label);
 
-  if (options.schema.kind === 'enum') {
-    const select = document.createElement('select');
-    select.className = 'je-field';
-    select.disabled = options.disabled;
-    select.setAttribute('aria-label', options.schema.label);
-    if (state.mixed) {
-      const mixedOption = document.createElement('option');
-      mixedOption.value = '';
-      mixedOption.textContent = 'Mixed';
-      select.append(mixedOption);
-    }
-    for (const optionName of options.schema.options ?? []) {
-      const option = document.createElement('option');
-      option.value = optionName;
-      option.textContent = optionName;
-      select.append(option);
-    }
-    select.value = state.mixed ? '' : state.text;
-    select.addEventListener('change', () => {
-      if (select.value !== '') options.onEnum(select.value);
-    });
-    wrap.append(select);
-    return wrap;
-  }
-
   const row = document.createElement('div');
   row.className = 'jp-inline';
   const input = document.createElement('input');
@@ -377,17 +370,17 @@ function fieldControl(options: {
   input.spellcheck = false;
   input.disabled = options.disabled;
   input.setAttribute('aria-label', options.schema.label);
-  if (options.schema.kind === 'number') input.inputMode = 'decimal';
+  if (options.schema.kind === 'number' || options.schema.kind === 'entity') input.inputMode = 'decimal';
   const mixed = state.mixed ? mixedNote(options.schema.label) : null;
   if (mixed) {
     input.placeholder = 'Mixed';
     input.setAttribute('aria-describedby', mixed.id);
   } else input.value = state.text;
   input.addEventListener('input', () => {
-    const invalid = options.schema.kind === 'number'
+    const invalid = options.schema.kind === 'number' || options.schema.kind === 'entity'
       ? parseNumberField(input.value) === undefined
-      : options.schema.kind === 'color' && parseColorField(input.value) === undefined;
-    if (options.schema.kind === 'number' || options.schema.kind === 'color') {
+      : false;
+    if (options.schema.kind === 'number' || options.schema.kind === 'entity') {
       input.setAttribute('aria-invalid', invalid ? 'true' : 'false');
     }
     if (!invalid) options.onText(input.value);
@@ -395,26 +388,6 @@ function fieldControl(options: {
   input.addEventListener('blur', () => options.onBlur());
   row.append(input);
   if (mixed) row.append(mixed);
-  if (options.schema.kind === 'color' && !state.mixed && parseColorField(state.text)) {
-    const swatch = document.createElement('span');
-    swatch.className = 'jp-swatch';
-    swatch.style.background = state.text;
-    swatch.setAttribute('aria-hidden', 'true');
-    row.append(swatch);
-  }
-  if (options.schema.kind === 'asset-ref') {
-    const listId = `jp-assets-${options.schema.key}`;
-    const list = document.createElement('datalist');
-    list.id = listId;
-    input.setAttribute('list', listId);
-    for (const asset of options.assets) {
-      const option = document.createElement('option');
-      option.value = asset.id;
-      option.label = asset.name;
-      list.append(option);
-    }
-    row.append(list);
-  }
   wrap.append(row);
   return wrap;
 }

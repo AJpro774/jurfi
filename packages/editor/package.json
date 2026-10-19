@@ -31,7 +31,9 @@
   "dependencies": {
     "@jurfi/core": "workspace:*",
     "@jurfi/render": "workspace:*",
-    "@jurfi/ui": "workspace:*"
+    "@jurfi/script": "workspace:*",
+    "@jurfi/ui": "workspace:*",
+    "three": "^0.186.1"
   },
   "devDependencies": {
     "tsup": "^9.0.0",
@@ -39,6 +41,7 @@
     "vitest": "^5.0.5",
     "happy-dom": "^20.0.10",
     "eslint": "^9.39.0",
+    "@types/three": "^0.186.0",
     "@jurfi/tsconfig": "workspace:*",
     "@jurfi/vitest-config": "workspace:*",
     "@jurfi/eslint-config": "workspace:*"

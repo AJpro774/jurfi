@@ -117,7 +117,7 @@ describe('content panels', () => {
     expect(root.querySelector('[data-placeholder="viewport"]')).not.toBeNull();
     expect(root.querySelector('[aria-label="Filter hierarchy"]')).not.toBeNull();
     expect(root.querySelector('[aria-label="Search assets"]')).not.toBeNull();
-    expect(root.querySelector('[aria-label="Current"]')).not.toBeNull();
+    expect(root.querySelector('[aria-label="Position X"]')).not.toBeNull();
   });
 
   it('filters the hierarchy and keeps ancestors', () => {
@@ -184,25 +184,25 @@ describe('content panels', () => {
 
   it('edits a component field, rejects invalid numbers, and coalesces undo', () => {
     const ctx = demoContext();
-    ctx.selection.set(['player']);
+    ctx.selection.set(['light']);
     const { host } = mount(mountInspector, ctx);
-    const input = host.querySelector<HTMLInputElement>('[aria-label="Current"]');
-    if (!input) throw new Error('missing health field');
+    const input = host.querySelector<HTMLInputElement>('[aria-label="Intensity"]');
+    if (!input) throw new Error('missing intensity field');
     input.value = 'abc';
     input.dispatchEvent(new Event('input', { bubbles: true }));
     expect(input.getAttribute('aria-invalid')).toBe('true');
-    expect(componentBag(ctx, 'player', 'jurfi.health').current).toBe(100);
+    expect(componentBag(ctx, 'light', 'Light').intensity).toBe(2);
 
-    input.value = '80';
+    input.value = '4';
     input.dispatchEvent(new Event('input', { bubbles: true }));
-    input.value = '70';
+    input.value = '6';
     input.dispatchEvent(new Event('input', { bubbles: true }));
-    expect(componentBag(ctx, 'player', 'jurfi.health').current).toBe(70);
+    expect(componentBag(ctx, 'light', 'Light').intensity).toBe(6);
     ctx.undo.undo();
-    expect(componentBag(ctx, 'player', 'jurfi.health').current).toBe(100);
+    expect(componentBag(ctx, 'light', 'Light').intensity).toBe(2);
     expect(ctx.undo.canUndo()).toBe(false);
     ctx.undo.redo();
-    expect(componentBag(ctx, 'player', 'jurfi.health').current).toBe(70);
+    expect(componentBag(ctx, 'light', 'Light').intensity).toBe(6);
   });
 
   it('applies one axis to a mixed multi-selection', () => {
@@ -215,21 +215,22 @@ describe('content panels', () => {
     expect(input.getAttribute('aria-describedby')).toBeTruthy();
     input.value = '5';
     input.dispatchEvent(new Event('input', { bubbles: true }));
-    expect(componentBag(ctx, 'player', 'jurfi.transform').position).toEqual([5, 1, 0]);
-    expect(componentBag(ctx, 'light', 'jurfi.transform').position).toEqual([5, 4, 1]);
+    expect(componentBag(ctx, 'player', 'Transform').position).toEqual([5, 1, 0]);
+    expect(componentBag(ctx, 'light', 'Transform').position).toEqual([5, 4, 1]);
+    expect(componentBag(ctx, 'player', 'transform').position).toEqual({ x: 5, y: 1, z: 0 });
   });
 
   it('adds a component and undoes it', () => {
     const ctx = demoContext();
-    ctx.selection.set(['light']);
+    ctx.selection.set(['camera']);
     const { host } = mount(mountInspector, ctx);
     const select = host.querySelector<HTMLSelectElement>('[aria-label="Component type"]');
     if (!select) throw new Error('missing component picker');
-    select.value = 'jurfi.health';
+    select.value = 'Light';
     host.querySelector<HTMLButtonElement>('[aria-label="Add component"]')?.click();
-    expect(componentBag(ctx, 'light', 'jurfi.health').current).toBe(100);
+    expect(componentBag(ctx, 'camera', 'Light').intensity).toBe(1);
     ctx.undo.undo();
-    expect(ctx.world.get('light')?.components['jurfi.health']).toBeUndefined();
+    expect(ctx.world.get('camera')?.components.Light).toBeUndefined();
   });
 
   it('disables fields on a locked entity', () => {
@@ -237,7 +238,7 @@ describe('content panels', () => {
     ctx.selection.set(['player']);
     const { host } = mount(mountInspector, ctx);
     setFlag(ctx, 'player', 'locked', true);
-    expect(host.querySelector<HTMLInputElement>('[aria-label="Current"]')?.disabled).toBe(true);
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Position X"]')?.disabled).toBe(true);
     expect(host.querySelector<HTMLInputElement>('#jp-entity-name')?.disabled).toBe(true);
   });
 

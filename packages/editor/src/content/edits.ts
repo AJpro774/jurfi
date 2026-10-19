@@ -137,8 +137,9 @@ export function writeComponentField(
     if (!isRecord(current)) continue;
     const nextValue = axis === undefined ? value : replaceAxis(current[key], axis, value);
     if (sameValue(current[key], nextValue)) continue;
+    const nextComponents = { ...entity.components, [type]: { ...current, [key]: nextValue } };
     before.set(id, entity.components);
-    after.set(id, { ...entity.components, [type]: { ...current, [key]: nextValue } });
+    after.set(id, mirrorViewportTransform(type, nextComponents));
   }
   if (before.size === 0) return false;
   for (const [id, components] of after) ctx.world.update(id, { components });
@@ -185,7 +186,7 @@ export function addComponentType(ctx: EditorContext, ids: readonly string[], typ
     const entity = ctx.world.get(id);
     if (!entity || readFlags(entity.components).locked || entity.components[type] !== undefined) continue;
     before.set(id, entity.components);
-    after.set(id, { ...entity.components, [type]: schema.defaults() });
+    after.set(id, mirrorViewportTransform(type, { ...entity.components, [type]: schema.defaults() }));
   }
   if (before.size === 0) return false;
   for (const [id, components] of after) ctx.world.update(id, { components });
@@ -229,8 +230,32 @@ export function removeComponentType(ctx: EditorContext, ids: readonly string[], 
 
 export function looseKeys(components: Record<string, unknown>): string[] {
   return Object.keys(components).filter((key) => {
-    if (key === FLAGS_KEY || componentSchema(key)) return false;
+    if (key === FLAGS_KEY || componentSchema(key) || key === 'transform' || key === 'mesh') return false;
     const value = components[key];
     return typeof value === 'number' || typeof value === 'string' || typeof value === 'boolean';
   });
+}
+
+function mirrorViewportTransform(type: string, components: Record<string, unknown>): Record<string, unknown> {
+  if (type !== 'Transform' || !isRecord(components.Transform)) return components;
+  const transform = components.Transform;
+  const position = readVec(transform.position, 3, [0, 0, 0]);
+  const rotation = readVec(transform.rotation, 4, [0, 0, 0, 1]);
+  const scale = readVec(transform.scale, 3, [1, 1, 1]);
+  return {
+    ...components,
+    transform: {
+      position: { x: position[0], y: position[1], z: position[2] },
+      rotation: { x: rotation[0], y: rotation[1], z: rotation[2], w: rotation[3] },
+      scale: { x: scale[0], y: scale[1], z: scale[2] },
+    },
+  };
+}
+
+function readVec(value: unknown, width: number, fallback: number[]): number[] {
+  const source = Array.isArray(value) ? value : [];
+  return fallback.map((item, index) => {
+    const next = source[index];
+    return typeof next === 'number' && Number.isFinite(next) ? next : item;
+  }).slice(0, width);
 }
