@@ -261,6 +261,9 @@ importers:
       '@jurfi/core':
         specifier: workspace:*
         version: link:../core
+      '@jurfi/physics':
+        specifier: workspace:*
+        version: link:../physics
       '@jurfi/render':
         specifier: workspace:*
         version: link:../render

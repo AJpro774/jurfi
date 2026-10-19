@@ -16,6 +16,8 @@ export interface EditorEventMap {
   'project:saved': { name: string };
   'project:loaded': { name: string };
   'status': { message: string; level: 'info' | 'warn' | 'error' };
+  /** Script, animation, and physics messages. The console panel listens here. */
+  'log': { level: 'info' | 'warn' | 'error'; message: string; source?: string };
   'command:executed': { id: string };
 }
 
