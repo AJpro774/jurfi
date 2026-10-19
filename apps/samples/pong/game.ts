@@ -1,3 +1,4 @@
+import type { Rng } from '@jurfi/perf';
 import { overlaps, type Aabb } from '@jurfi/physics';
 import { clamp } from '@jurfi/core';
 
@@ -20,12 +21,12 @@ export class PongGame {
   phase: Phase = 'serve';
   frame = 0;
 
-  constructor(private rng: () => number, private events: GameEvents) {}
+  constructor(private rng: Rng, private events: GameEvents) {}
 
   private serve(dir: number): void {
     this.ball.x = W / 2; this.ball.y = H / 2;
     this.ball.vx = 220 * dir;
-    this.ball.vy = (this.rng() * 2 - 1) * 160;
+    this.ball.vy = (this.rng.next() * 2 - 1) * 160;
     this.phase = 'play';
   }
 
@@ -34,7 +35,7 @@ export class PongGame {
     this.frame++;
     if (this.phase !== 'play' && jump) {
       if (this.phase === 'over') this.score = { player: 0, ai: 0 };
-      this.serve(this.rng() < 0.5 ? -1 : 1);
+      this.serve(this.rng.next() < 0.5 ? -1 : 1);
     }
     const p = this.player;
     if (target !== null) {

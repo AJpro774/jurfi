@@ -39,7 +39,8 @@ export default defineConfig({
   },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'], ...common, launchOptions: { args: webgpuArgs } } },
-    { name: 'firefox', use: { ...devices['Desktop Firefox'], ...common } },
+    // Firefox's gfx blocklist reports AllowWebgl2:false on GPU-less CI containers; force WebGL on (software GL is fine for tests).
+    { name: 'firefox', use: { ...devices['Desktop Firefox'], ...common, launchOptions: { firefoxUserPrefs: { 'webgl.force-enabled': true } } } },
     { name: 'webkit', use: { ...devices['Desktop Safari'], ...common } },
   ],
 });

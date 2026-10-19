@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "visual": "playwright test",
-    "visual:update": "UPDATE_BASELINES=1 playwright test --update-snapshots",
+    "visual:update": "UPDATE_BASELINES=1 playwright test specs/pong.visual.spec.ts --update-snapshots",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run"
