@@ -51,7 +51,15 @@ export {
   registerSceneMigration,
 } from './migrate';
 export { instantiatePrefab } from './prefab';
-export type { Query, SceneEntityJson, SceneJson, WorldPlugin, ComponentRef, SetParentOptions } from './world';
+export type {
+  Query,
+  SceneEntityJson,
+  SceneJson,
+  WorldPlugin,
+  ComponentRef,
+  ComponentChange,
+  SetParentOptions,
+} from './world';
 export { SCENE_VERSION, World, createWorld, resolveEntityId } from './world';
 
 export type { RenderScene } from './render-scene';

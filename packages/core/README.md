@@ -51,6 +51,7 @@ world.setField(entity, Health, 'hp', 5);
 | `events` | `created`, `destroyed`, `added`, `removed`, `changed` |
 | `transaction` / `undo` / `redo` | Inverse-patch history. `transaction(fn)` groups edits into one step |
 | `onChange` | One stream of committed edits, undos, and redos for autosave |
+| `onChanged` | Inspector subscription for one entity, component, or field |
 | `time` | `tick(dt)`, `delta`, `elapsed`, `frame`, `scale` |
 | `use` | Run a plugin once per id |
 | `toScene` / `loadScene` | Scene JSON, including dead-slot generations |
@@ -58,6 +59,8 @@ world.setField(entity, Health, 'hp', 5);
 | `dispose` | Drop storage |
 
 `transaction(() => { ... })` records every create, destroy, component write, field write, variable, name, and parent change inside the callback as one undo step. Nested transactions join that step. A throw rolls the open step back. Outside a transaction each call is its own step. `undo` / `redo` round-trip entity ids, including a destroy followed by generation reuse: undoing a create releases the slot without burning its generation, and undoing a destroy adopts the original id. `onChange` fires once per committed step (and once per undo or redo) with the patches just applied. `loadScene` clears history. `subscribe` is still the coalesced "something mutated" signal.
+
+`onChanged(entity, listener)`, `onChanged(entity, component, listener)`, and `onChanged(entity, component, field, listener)` bind an inspector. They run for `add`, `remove`, `set`, and `setField`. `setParent` is included for the entity listener, and only when the parent actually changes. A field listener also runs when that whole component is added, replaced, or removed. The returned function unsubscribes. Inside `batch()` or `transaction()` the calls wait until the outermost one finishes, and a repeated edit of the same entity, component, field, and kind collapses to one call.
 
 `registerMigration(componentId, fromVersion, fn)` stores one step from version N to N+1. `registerSceneMigration` and `registerPrefabMigration` do the same for the scene and prefab envelopes. `loadScene` and `instantiatePrefab` run those chains before schema checks: the envelope walks up to `SCENE_VERSION` or `PREFAB_VERSION`, then each component walks from the version saved in `componentVersions` (missing means 1) to the version passed to `defineComponent`. A hole in the chain throws `missing-migration`. `toScene` writes the current component versions so a re-save does not run the chain again. Registrations happen only when those functions are called.
 
