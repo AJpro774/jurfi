@@ -58,3 +58,46 @@ export { createEditor } from './shell';
 export type { CreateEditorOptions, Editor } from './shell';
 
 export { ensurePlaceholderPanels } from './panels';
+
+export { registerViewportPanel, VIEWPORT_PANEL_ID } from './viewport/register';
+export { setViewportIdBuffer } from './viewport/panel';
+export type { IdBufferPicker } from './viewport/picking';
+export type { ShadingMode, ViewMode } from './viewport/types';
+
+export {
+  createDefaultRegistry,
+  createDemoGraph,
+  createEmptyGraph,
+  createRegistry,
+  deserializeGraph,
+  edgeWireId,
+  evaluateConnection,
+  GraphSchemaError,
+  identityGraphAdapter,
+  mountNodeGraph,
+  registerNodeGraphPanel,
+  searchNodes,
+  serializeGraph,
+  stripEditorData,
+  validateGraph,
+} from './node-graph';
+export type {
+  GraphClipboard,
+  GraphDocAdapter,
+  GraphRect,
+  NodeDef,
+  NodeGraphHandle,
+  NodeGraphOptions,
+  NodeRegistry,
+  PinSpec,
+} from './node-graph';
+export type {
+  DebugEvent,
+  DebugSource,
+  GraphComment,
+  GraphDoc,
+  GraphEdge,
+  GraphGroup,
+  GraphNode,
+  PinEndpoint,
+} from '@jurfi/script';

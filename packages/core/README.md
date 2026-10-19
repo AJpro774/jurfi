@@ -63,6 +63,6 @@ world.setField(entity, Health, 'hp', 5);
 
 ## Editor and script adapters
 
-`createEditorWorld(world?)` is the document shape `@jurfi/editor` calls `EditorWorld`: string ids, `name`, `parentId`, a JSON component bag, `serialize` / `deserialize`, and `subscribe`. Ids are aliases. Defined components are stored in the ECS; other bag keys stay as JSON so a bag like `{ health: -1 }` still round-trips.
+`createEditorWorld(world?)` is the document shape `@jurfi/editor` calls `EditorWorld`: string ids, `name`, `parentId`, a JSON component bag, `serialize` / `deserialize`, and `subscribe`. Ids are aliases. Defined components are stored in the ECS; other bag keys stay as JSON so a bag like `{ health: -1 }` still round-trips. Rows read back from the world also carry `eid` (the packed entity id), `variables`, and the snapshot carries `generations`. `deserialize` restores those slots instead of allocating new ids, which is what play-mode `stop()` needs. Documents without `eid` still allocate fresh entities.
 
 `createScriptWorld(world, self?)` is the `ScriptWorld` surface used by visual scripting: `getComponent`, `setComponent`, `hasComponent`, `getField`, `setField`, `getVariable`, and `setVariable`.

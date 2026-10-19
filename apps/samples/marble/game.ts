@@ -1,3 +1,4 @@
+import type { Rng } from '@jurfi/perf';
 import { clamp } from '@jurfi/core';
 
 /** Arena half-extent (world units, x/z plane; y is up). */
@@ -26,12 +27,12 @@ export class MarbleGame {
   /** Steps spent in 'play'. */
   steps = 0;
 
-  constructor(private rng: () => number, private events: GameEvents) { this.layout(); }
+  constructor(private rng: Rng, private events: GameEvents) { this.layout(); }
 
   private layout(): void {
     this.gems = [];
     for (let i = 0; i < GEM_COUNT; i++) {
-      this.gems.push({ x: (this.rng() * 2 - 1) * (HALF - 1), z: (this.rng() * 2 - 1) * (HALF - 1), taken: false });
+      this.gems.push({ x: (this.rng.next() * 2 - 1) * (HALF - 1), z: (this.rng.next() * 2 - 1) * (HALF - 1), taken: false });
     }
   }
 

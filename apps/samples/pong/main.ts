@@ -2,9 +2,12 @@ import '@jurfi/ui';
 import { detectBackend } from '@jurfi/render';
 import { Input, VirtualButton } from '@jurfi/input';
 import { AudioEngine } from '@jurfi/audio';
-import { Profiler } from '@jurfi/perf';
+import { Profiler, createClock, createRng, createTestClock } from '@jurfi/perf';
 import { PongGame, W, H } from './game';
-import { createClock, createRng, STEP } from './clock';
+
+// Fixed step shared by both clocks: 1/60 s (the clock works in ms, the game in seconds).
+const STEP_MS = 1000 / 60;
+const STEP = STEP_MS / 1000;
 
 // NOTE: samples must never import @jurfi/editor (export guard).
 const params = new URLSearchParams(location.search);
@@ -57,11 +60,13 @@ canvas.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false
 
 // Muted by default under ?test=1 (AudioEngine checks the query string itself).
 const audio = new AudioEngine({ muted: testMode });
-const clock = createClock(testMode);
-const perf = new Profiler({ now: () => clock.fixed ? clock.now() * 1000 : performance.now() });
+// Test mode: time moves only via clock.advance(); otherwise a real-time fixed-step clock (backlog capped at 15 steps = 0.25 s).
+const testClock = createTestClock(STEP_MS);
+const clock = testMode ? testClock : createClock({ fixedStepMs: STEP_MS, maxCatchUp: 15 });
+const perf = new Profiler({ now: () => (testMode ? clock.now() : performance.now()) });
 const sysUpdate = perf.register('update');
 const sysDraw = perf.register('draw');
-const rng = createRng(testMode ? 1337 : (Date.now() & 0xffffffff));
+const rng = createRng(testMode ? 1337 : Date.now());
 
 // Two short synthesized blips via AudioEngine.playTone (muted by master bus under ?test=1).
 const hitTone = (): void => { audio.playTone({ frequency: 440, duration: 0.06, type: 'square', volume: 0.5, bus: 'sfx' }); };
@@ -87,7 +92,6 @@ function update(): void {
   const p = input.pointer;
   const target = p.active && p.source === 'touch' ? p.ny * H : null;
   game.step(STEP, move, target, jump);
-  clock.tick();
 }
 
 function draw(): void {
@@ -109,15 +113,14 @@ function draw(): void {
 
 // Real-time: fixed-step accumulator. Test mode: exactly one step per frame, no wall clock.
 let last = 0;
-let acc = 0;
 function frame(ts: number): void {
   perf.beginFrame();
   perf.begin(sysUpdate);
-  if (testMode) update();
+  if (testMode) { testClock.advance(1); update(); }
   else {
-    acc += Math.min(0.25, (ts - last) / 1000);
+    clock.tick(ts - last);
     last = ts;
-    while (acc >= STEP) { update(); acc -= STEP; }
+    while (clock.step()) update();
   }
   perf.end(sysUpdate);
   perf.begin(sysDraw);
@@ -135,7 +138,8 @@ if (testMode) {
     clock,
     perf,
     /** Deterministically advance n steps (and redraw). */
-    advance(n: number) { for (let i = 0; i < n; i++) update(); draw(); },
-    start() { game.step(STEP, 0, null, true); },
+    advance(n: number) { for (let i = 0; i < n; i++) { testClock.advance(1); update(); } draw(); },
+    /** Serve. Resets the frame counters first so state after start()+advance(n) does not depend on how many rAF frames ran before the call. */
+    start() { testClock.reset(); game.frame = 0; game.step(STEP, 0, null, true); },
   };
 }

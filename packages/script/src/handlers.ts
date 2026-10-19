@@ -1,7 +1,8 @@
 import { clamp } from '@jurfi/core';
 import type { CompiledNode } from './ir';
 import type { VariableScope } from './schema';
-import { propString } from './util';
+import { callDefinedRun, callDefinedValue, hasDefinedScript, type ScriptCall } from './scripts';
+import { propString, valuesEqual } from './util';
 import type { EntityRef, ScriptWorld } from './world';
 
 /** Host surface the built-in nodes call. The runtime implements this; handlers never see the editor. */
@@ -51,20 +52,6 @@ function compareNum(op: (a: number, b: number) => boolean): NodeHandler {
       return op(host.num(host.read(node, 'a')), host.num(host.read(node, 'b')));
     },
   };
-}
-
-function entityId(value: unknown): string | number | undefined {
-  if (!value || typeof value !== 'object' || !('id' in value)) return undefined;
-  const id = (value as { id: unknown }).id;
-  return typeof id === 'string' || typeof id === 'number' ? id : undefined;
-}
-
-/** Object.is, or matching entity ids when both values carry an id. */
-export function valuesEqual(a: unknown, b: unknown): boolean {
-  if (Object.is(a, b)) return true;
-  const left = entityId(a);
-  const right = entityId(b);
-  return left !== undefined && right !== undefined && Object.is(left, right);
 }
 
 function pass(host: ExecHost, node: CompiledNode): void {
@@ -261,8 +248,34 @@ function sequenceIndex(name: string): number | null {
   return Number(match[1]);
 }
 
+function callFrom(host: ExecHost, node: CompiledNode): ScriptCall {
+  return {
+    dt: host.dt,
+    world: host.world,
+    nodeId: node.id,
+    props: node.props,
+    read: (pin) => host.read(node, pin),
+    follow: (pin) => host.follow(node, pin),
+    entity: (value) => host.entity(value),
+    num: (value) => host.num(value),
+    truthy: (value) => host.truthy(value),
+    getVar: (scope, name, entity) => host.getVar(scope, name, entity),
+    setVar: (scope, name, value, entity) => host.setVar(scope, name, value, entity),
+  };
+}
+
 export function getNodeHandler(typeId: string): NodeHandler | undefined {
-  return nodeHandlers[typeId];
+  const builtin = nodeHandlers[typeId];
+  if (builtin) return builtin;
+  if (!hasDefinedScript(typeId)) return undefined;
+  return {
+    exec(host, node) {
+      if (!callDefinedRun(typeId, callFrom(host, node))) host.follow(node, 'then');
+    },
+    value(host, node, pin) {
+      return callDefinedValue(typeId, callFrom(host, node), pin);
+    },
+  };
 }
 
 export function nodeHandlerTypes(): string[] {
