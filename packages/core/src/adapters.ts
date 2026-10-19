@@ -1,7 +1,7 @@
 import { entityIndex, type Entity } from './entity';
 import { componentModel, coerceComponentData } from './schema';
 import { cloneJson } from './storage';
-import { createWorld, resolveEntityId, type World } from './world';
+import { SCENE_VERSION, createWorld, resolveEntityId, type World } from './world';
 
 /**
  * Editor document row. Field names match `EditorWorld` in `@jurfi/editor`.
@@ -12,10 +12,19 @@ export interface EditorEntityRecord {
   name: string;
   parentId: string | null;
   components: Record<string, unknown>;
+  /** Packed ECS id. Present on rows read from the world so play mode can restore that slot. */
+  eid?: number;
+  /** Per-entity variables. Omitted by documents that predate the ECS adapter. */
+  variables?: Record<string, unknown>;
 }
 
 export interface EditorSnapshot {
   entities: EditorEntityRecord[];
+  /**
+   * Next generation for every index below the high-water mark.
+   * Present when the snapshot was read from the ECS, including dead slots.
+   */
+  generations?: number[];
 }
 
 /**
@@ -85,6 +94,8 @@ export function createEditorWorld(world: World = createWorld()): EditorWorldView
       name: world.getName(entity),
       parentId: pending ?? (parent === null ? null : editorId(parent)),
       components,
+      eid: entity,
+      variables: world.getVariables(entity),
     };
   };
 
@@ -156,7 +167,7 @@ export function createEditorWorld(world: World = createWorld()): EditorWorldView
       world.destroy(entity);
     },
     serialize() {
-      return { entities: world.entities().map(recordOf) };
+      return { entities: world.entities().map(recordOf), generations: world.toScene().generations };
     },
     deserialize(snapshot) {
       if (!isEditorSnapshot(snapshot)) throw new Error('Invalid world snapshot');
@@ -165,15 +176,39 @@ export function createEditorWorld(world: World = createWorld()): EditorWorldView
         if (seen.has(row.id)) throw new Error(`Entity "${row.id}" already exists`);
         seen.add(row.id);
       }
+      const stable = snapshot.generations !== undefined && snapshot.entities.every((row) => typeof row.eid === 'number');
       world.batch(() => {
-        for (const entity of [...world.entities()]) world.destroy(entity);
         unresolved.clear();
+        if (stable && snapshot.generations) {
+          world.loadScene({
+            version: SCENE_VERSION,
+            generations: snapshot.generations,
+            entities: snapshot.entities.map((row) => ({
+              id: row.eid as number,
+              name: row.name,
+              parent: null,
+              components: row.components,
+              variables: row.variables ?? {},
+            })),
+          });
+          for (const row of snapshot.entities) {
+            if (row.eid !== undefined) world.setAlias(row.eid, row.id);
+          }
+          for (const row of snapshot.entities) {
+            if (row.eid === undefined || !world.isAlive(row.eid)) continue;
+            applyParent(row.eid, row.parentId);
+          }
+          return;
+        }
+        for (const entity of [...world.entities()]) world.destroy(entity);
         const created: Entity[] = [];
         for (const row of snapshot.entities) {
           const entity = world.create();
           world.setAlias(entity, row.id);
           world.setName(entity, row.name);
           replaceComponents(world, entity, row.components);
+          const variables = row.variables ?? {};
+          for (const [name, value] of Object.entries(variables)) world.setVariable(entity, name, value);
           created.push(entity);
         }
         snapshot.entities.forEach((row, index) => {

@@ -155,10 +155,38 @@ Other string event names are allowed; their payload is `unknown` unless you agre
 
 ### Play mode
 
-`play()` stores `world.serialize()` the first time the session leaves editing, then sets the state to `playing`. `pause()` only applies while playing. `play()` from paused resumes and keeps the original snapshot. `stop()` deserializes that snapshot, clears the undo stack, and returns to `editing`. `step()` snapshots if needed, forces `paused`, and emits `play:step`. Nothing in the shell ticks a game loop; the snapshot boundary is the scaffold a runtime can hook.
+`play()` stores `world.serialize()` the first time the session leaves editing, then sets the state to `playing`. `pause()` only applies while playing. `play()` from paused resumes and keeps the original snapshot. `stop()` deserializes that snapshot, clears the undo stack, and returns to `editing`. When the world is the `@jurfi/core` adapter, that snapshot includes packed entity ids, per-entity variables, and the generation table, so `stop()` restores the same numeric ids and variables that were current when play began. `step()` snapshots if needed, forces `paused`, and emits `play:step`. Nothing in the shell ticks a game loop; the snapshot boundary is the scaffold a runtime can hook.
 
 ## Shell
 
 `createEditor({ root, world?, storage? })` mounts the dock, menu bar, toolbar, command palette, and status bar into `root`. It registers a placeholder for any standard panel id that is still empty. Layout (zone sizes, tab order, collapsed dock) is stored in `localStorage` under `jurfi.editor.layout`. Reset Layout restores the default and clears that key.
 
 Project files are JSON (`format: 'jurfi-project'`, version 1) containing the world snapshot and the layout. File → Save downloads that JSON. File → Open reads a file the user picks. An autosave of the same document is written to `localStorage` under `jurfi.editor.autosave` and restored on the next launch.
+
+## Node graph
+
+`registerNodeGraphPanel()` claims the `nodegraph` panel id. Call it before `createEditor` so the shell placeholder is never installed. The panel uses `EditorContext.undo`: each edit is applied, then pushed. `push` does not call `redo`. Tab switches remount the view against the same controller, so undo closures stay valid.
+
+`mountNodeGraph(element, document, options)` mounts the same canvas without the dock. Pass `options.undo` to share a stack. Otherwise it creates a private `UndoStack`. Pass `options.registry` (`register`, `get`, `list`) and `options.adapter` (`toGraph` / `fromGraph`) to reuse the canvas for another domain, such as a blend tree. The canvas edits a `GraphDoc`. The handle exposes `onChange`, `select`, `frame`, `setDebugSource`, `undo`, and `redo`. `onChange` emits the host document from the adapter.
+
+```ts
+import { createEditor, registerNodeGraphPanel, registerViewportPanel } from '@jurfi/editor';
+
+registerViewportPanel();
+registerNodeGraphPanel();
+createEditor({ root });
+```
+
+Graph document types come from `@jurfi/script`: `GraphDoc`, `NodeRegistry`, and `DebugSource`. The document uses `edges`, optional node `pos`, top-level `groups` and `comments` stored as `pos` plus `size`, type ids such as `core/Add`, and an optional `subgraphs` map keyed by id. Pin specs live on the node definition. `stripEditorData(doc)` is the script export and removes `pos`, `groups`, and `comments`, including inside subgraphs.
+
+The view implements `DebugSource`. Play mode loads the graph with `createScriptRuntime`, calls `attachDebugger`, and paints `{ kind: 'wire', wireId, value }` and `{ kind: 'node', nodeId, phase: 'enter' | 'exit' }` through `onEvent`. `wireId` is the edge id when the edge has one, otherwise `fromNode:fromPin->toNode:toPin`. `setDebugSource` installs an extra listener for those same events, and `null` clears the overlay.
+
+Every committed edit is on the undo stack, and `getDocument()` is JSON. The panel writes that JSON to `localStorage` under `jurfi.editor.nodegraph` after each commit so a reload can restore it. The shell project file and `jurfi.editor.autosave` still store the world and layout only. A drag or a text field is not in the document until the gesture or the field commits.
+
+```bash
+pnpm --filter @jurfi/ui build
+pnpm --filter @jurfi/core build
+pnpm --filter @jurfi/editor-app dev
+```
+
+Open the Node Graph tab. Wheel zooms, Alt-drag or middle-drag pans, drag on empty space box-selects, and Shift-click toggles multi-select. Search the palette, drag a node type onto the canvas, and use Undo / Redo. Ctrl/Cmd+Z follows the shell shortcut and the graph toolbar.
