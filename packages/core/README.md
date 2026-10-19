@@ -46,11 +46,15 @@ world.setField(entity, Health, 'hp', 5);
 | `getVariable` / `setVariable` | Per-entity variables |
 | `query` | Entities that have every requested component |
 | `events` | `created`, `destroyed`, `added`, `removed`, `changed` |
+| `transaction` / `undo` / `redo` | Inverse-patch history. `transaction(fn)` groups edits into one step |
+| `onChange` | One stream of committed edits, undos, and redos for autosave |
 | `time` | `tick(dt)`, `delta`, `elapsed`, `frame`, `scale` |
 | `use` | Run a plugin once per id |
 | `toScene` / `loadScene` | Scene JSON, including dead-slot generations |
 | `renderScene` | `entities`, `worldMatrices`, `dirty`, and `view(component)` in parallel |
 | `dispose` | Drop storage |
+
+`transaction(() => { ... })` records every create, destroy, component write, field write, variable, name, and parent change inside the callback as one undo step. Nested transactions join that step. A throw rolls the open step back. Outside a transaction each call is its own step. `undo` / `redo` round-trip entity ids, including a destroy followed by generation reuse: undoing a create releases the slot without burning its generation, and undoing a destroy adopts the original id. `onChange` fires once per committed step (and once per undo or redo) with the patches just applied. `loadScene` clears history. `subscribe` is still the coalesced "something mutated" signal.
 
 `renderScene()` lists alive entities in index order. `worldMatrices` holds column-major 4x4 matrices (16 floats each) computed from `Transform` and parent links. An entity without `Transform` contributes an identity matrix. `dirty[i]` is 1 when that world matrix changed since the previous extraction. `view(id)` returns component values aligned with `entities`.
 
