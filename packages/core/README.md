@@ -28,11 +28,13 @@ world.getField(entity, Health, 'hp');
 world.setField(entity, Health, 'hp', 5);
 ```
 
-`defineComponent(id, schema, { storage })` accepts `sparse` (one object per entity) and `soa` (one column per lane). Storage defaults to `sparse`, except `Transform`, which defaults to `soa`. Field writes are checked against the schema: finite numbers, booleans, strings, entity ids, and vectors (`vec2`, `vec3`, `vec4`, `quat`, `color`). Vector lanes use a dotted path (`position.x`, `color.r`). A dotted write on a missing component creates it from defaults.
+`defineComponent(id, schema, { storage, version })` accepts `sparse` (one object per entity) and `soa` (one column per lane). Storage defaults to `sparse`, except `Transform`, which defaults to `soa`. `version` defaults to 1. Field writes are checked against the schema: finite numbers, booleans, strings, entity ids, and vectors (`vec2`, `vec3`, `vec4`, `quat`, `color`). Vector lanes use a dotted path (`position.x`, `color.r`). A dotted write on a missing component creates it from defaults.
 
 `Transform`, `Light`, and `Light2D` are built in. `Light2D` is its own component.
 
 `getVariable` / `setVariable` is a JSON key/value map on the entity. Destroying an entity drops its components and variables, and the next occupant of that slot does not see them.
+
+`setParent(child, parent, { keepWorldTransform: true })` rewrites the child's local `Transform` so its world matrix stays put. `index` is the sibling slot after the child is removed from its old parent (the default is to append). Calling `setParent` with the parent the child already has, and no `index`, leaves the sibling order alone. `childrenOf(parent)` returns that order (`null` lists roots), and `setChildIndex` reorders within the current parent. Indexes outside the list clamp. A parent cycle throws. A zero parent scale throws. If the compensated local matrix is not a position-rotation-scale, that throws too, and the parent link is left unchanged. `toScene()` walks roots and then children in that order, so `loadScene` restores sibling order.
 
 ## World
 
@@ -44,6 +46,7 @@ world.setField(entity, Health, 'hp', 5);
 | `add` / `set` / `get` / `has` / `remove` | Components, by type or id |
 | `getField` / `setField` | One schema field |
 | `getVariable` / `setVariable` | Per-entity variables |
+| `childrenOf` / `setChildIndex` | Ordered children and sibling slots |
 | `query` | Entities that have every requested component |
 | `events` | `created`, `destroyed`, `added`, `removed`, `changed` |
 | `transaction` / `undo` / `redo` | Inverse-patch history. `transaction(fn)` groups edits into one step |
@@ -55,6 +58,8 @@ world.setField(entity, Health, 'hp', 5);
 | `dispose` | Drop storage |
 
 `transaction(() => { ... })` records every create, destroy, component write, field write, variable, name, and parent change inside the callback as one undo step. Nested transactions join that step. A throw rolls the open step back. Outside a transaction each call is its own step. `undo` / `redo` round-trip entity ids, including a destroy followed by generation reuse: undoing a create releases the slot without burning its generation, and undoing a destroy adopts the original id. `onChange` fires once per committed step (and once per undo or redo) with the patches just applied. `loadScene` clears history. `subscribe` is still the coalesced "something mutated" signal.
+
+`registerMigration(componentId, fromVersion, fn)` stores one step from version N to N+1. `registerSceneMigration` and `registerPrefabMigration` do the same for the scene and prefab envelopes. `loadScene` and `instantiatePrefab` run those chains before schema checks: the envelope walks up to `SCENE_VERSION` or `PREFAB_VERSION`, then each component walks from the version saved in `componentVersions` (missing means 1) to the version passed to `defineComponent`. A hole in the chain throws `missing-migration`. `toScene` writes the current component versions so a re-save does not run the chain again. Registrations happen only when those functions are called.
 
 `renderScene()` lists alive entities in index order. `worldMatrices` holds column-major 4x4 matrices (16 floats each) computed from `Transform` and parent links. An entity without `Transform` contributes an identity matrix. `dirty[i]` is 1 when that world matrix changed since the previous extraction. `view(id)` returns component values aligned with `entities`.
 

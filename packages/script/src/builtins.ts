@@ -256,6 +256,67 @@ export const builtinNodeDefs: readonly NodeDef[] = [
     ],
   },
   {
+    typeId: 'core/SpawnEntity',
+    category: 'entity',
+    doc: 'Creates an entity with world.create() and outputs it, then continues.',
+    pins: [execIn, thenOut, dataOut('entity', 'entity', 'Entity')],
+  },
+  {
+    typeId: 'core/DestroyEntity',
+    category: 'entity',
+    doc: 'Destroys an entity with world.destroy() (default: self), then continues.',
+    pins: [execIn, dataIn('entity', 'entity', { label: 'Entity' }), thenOut],
+  },
+  {
+    typeId: 'core/AddComponent',
+    category: 'entity',
+    doc: 'Adds a component with world.add(). props.component is required. An omitted value uses the schema default.',
+    pins: [
+      execIn,
+      dataIn('entity', 'entity', { label: 'Entity' }),
+      dataIn('value', 'any', { label: 'Value' }),
+      thenOut,
+    ],
+  },
+  {
+    typeId: 'core/RemoveComponent',
+    category: 'entity',
+    doc: 'Removes a component with world.remove(). props.component is required. Missing components are ignored.',
+    pins: [execIn, dataIn('entity', 'entity', { label: 'Entity' }), thenOut],
+  },
+  {
+    typeId: 'core/HasComponent',
+    category: 'entity',
+    doc: 'True when world.has() finds props.component on the entity (default: self).',
+    pure: true,
+    pins: [
+      dataIn('entity', 'entity', { label: 'Entity' }),
+      dataOut('result', 'bool', 'Result'),
+    ],
+  },
+  {
+    typeId: 'core/Query',
+    category: 'entity',
+    doc: 'Entities that have every name in props.components. The entities output is an iterable of entity refs for ForEach.',
+    pure: true,
+    pins: [
+      dataIn('components', 'any', { label: 'Components' }),
+      dataOut('entities', 'any', 'Entities'),
+    ],
+  },
+  {
+    typeId: 'core/ForEach',
+    category: 'flow',
+    doc: 'Runs body once per item of an entity iterable, then completed. The entity output is the current item.',
+    pins: [
+      execIn,
+      dataIn('entities', 'any', { required: true, label: 'Entities' }),
+      dataOut('entity', 'entity', 'Entity'),
+      { name: 'body', kind: 'exec', direction: 'out', label: 'Body' },
+      { name: 'completed', kind: 'exec', direction: 'out', label: 'Completed' },
+    ],
+  },
+  {
     typeId: 'core/Subgraph',
     category: 'graph',
     doc: 'Runs a nested graph’s OnStart chain, then continues. props.graph is a key of this document’s subgraphs.',

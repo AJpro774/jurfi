@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "label": "Turret",
+  "components": { "MigWidget": { "hp": 2 } },
+  "componentVersions": { "MigWidget": 1 },
+  "children": [{ "label": "Barrel", "components": {} }]
+}

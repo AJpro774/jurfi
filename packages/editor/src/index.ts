@@ -62,6 +62,9 @@ export { ensurePlaceholderPanels } from './panels';
 export { registerContentPanels } from './content/register';
 export { createDemoSnapshot, seedDemoLibrary } from './content/demo';
 
+export { registerTimelinePanel } from './timeline/register';
+export { createSampleClip } from './timeline/sample-clip';
+
 export { registerViewportPanel, VIEWPORT_PANEL_ID } from './viewport/register';
 export { setViewportIdBuffer } from './viewport/panel';
 export type { IdBufferPicker } from './viewport/picking';

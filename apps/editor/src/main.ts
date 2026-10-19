@@ -1,12 +1,14 @@
 import '@jurfi/ui';
 import '@jurfi/editor/shell.css';
 import '@jurfi/editor/panels.css';
+import '@jurfi/editor/timeline.css';
 import { createEditorWorld } from '@jurfi/core';
 import {
   createDemoSnapshot,
   createEditor,
   registerContentPanels,
   registerNodeGraphPanel,
+  registerTimelinePanel,
   registerViewportPanel,
   seedDemoLibrary,
   type Editor,
@@ -18,6 +20,7 @@ const app: HTMLElement = root;
 
 registerViewportPanel();
 registerNodeGraphPanel();
+registerTimelinePanel();
 registerContentPanels();
 
 let active: Editor | undefined;

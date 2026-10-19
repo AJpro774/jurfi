@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "generations": [1],
+  "componentVersions": { "MigWidget": 1 },
+  "entities": [
+    {
+      "id": 1048576,
+      "name": "Widget",
+      "parent": null,
+      "components": { "MigWidget": { "hp": 4 } },
+      "variables": {}
+    }
+  ]
+}

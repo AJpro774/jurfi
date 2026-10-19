@@ -12,6 +12,7 @@ import type {
 import type { NodeDef, NodeRegistry, PinSpec } from './registry';
 import { GRAPH_VERSION, readInstancePin, type DataType, type GraphDoc, type GraphNode } from './schema';
 import { isJsonValue, propString } from './util';
+import { componentNames } from './world';
 
 const ENTRY_TYPES = new Set(['core/OnStart', 'core/OnUpdate', 'core/OnEvent']);
 
@@ -386,8 +387,26 @@ function checkProps(
       break;
     case 'core/GetComponent':
     case 'core/SetComponent':
+    case 'core/AddComponent':
+    case 'core/RemoveComponent':
+    case 'core/HasComponent':
       need('component');
       break;
+    case 'core/Query': {
+      const hasPin = node.pins !== undefined && Object.prototype.hasOwnProperty.call(node.pins, 'components');
+      const linked = doc.edges.some((edge) => edge?.to?.node === node.id && edge.to.pin === 'components');
+      if (!hasPin && !linked && componentNames(props.components).length === 0) {
+        report(
+          diagnostics,
+          subgraph,
+          'error',
+          props.components === undefined ? 'missing-prop' : 'invalid-prop',
+          `Node "${node.id}" needs props.components with at least one component name`,
+          { nodeId: node.id },
+        );
+      }
+      break;
+    }
     case 'core/GetField':
     case 'core/SetField':
       need('component');

@@ -255,6 +255,9 @@ importers:
 
   packages/editor:
     dependencies:
+      '@jurfi/anim':
+        specifier: workspace:*
+        version: link:../anim
       '@jurfi/core':
         specifier: workspace:*
         version: link:../core

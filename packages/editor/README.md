@@ -45,7 +45,7 @@ Placeholder ids the shell installs when nobody has claimed them yet:
 | `inspector` | Inspector | Right |
 | `console` | Console | Bottom dock |
 
-`registerContentPanels()` replaces the `hierarchy`, `inspector`, and `assets` placeholders. Call it before `createEditor`, along with `registerViewportPanel()` and `registerNodeGraphPanel()`. The editor app opens `createEditorWorld()` from `@jurfi/core`, loads `createDemoSnapshot()`, and calls `seedDemoLibrary(ctx)`.
+`registerContentPanels()` replaces the `hierarchy`, `inspector`, and `assets` placeholders. Call it before `createEditor`, along with `registerViewportPanel()`, `registerNodeGraphPanel()`, and `registerTimelinePanel()`. The editor app opens `createEditorWorld()` from `@jurfi/core`, loads `createDemoSnapshot()`, and calls `seedDemoLibrary(ctx)`.
 
 The inspector builds component editors from `@jurfi/core` `defineComponent` schemas (`Transform`, `Light`, `Light2D`, and any later component). Editing `Transform` also writes the viewport's `components.transform` document, which is the shape the scene view and gizmos read. `components.mesh.shape` is `box`, `sphere`, or `plane`. Visibility and lock stay in `jurfi.flags`. The asset library is session-only and is not part of the project file.
 
