@@ -15,6 +15,8 @@ export interface EditorEventMap {
   'layout:reset': { layout: LayoutState };
   'project:saved': { name: string };
   'project:loaded': { name: string };
+  /** A section asked for an autosave without mutating the world. */
+  'project:dirty': Record<string, never>;
   'status': { message: string; level: 'info' | 'warn' | 'error' };
   'command:executed': { id: string };
 }

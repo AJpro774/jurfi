@@ -60,6 +60,7 @@ export interface EditorContext {
   readonly undo: UndoStack;
   readonly commands: CommandRegistry;
   readonly bus: EditorBus;
+  readonly project: EditorProject;
   getPlayState(): PlayState; // 'editing' | 'playing' | 'paused'
   play(): void;
   pause(): void;
@@ -152,6 +153,7 @@ interface EditorCommand {
 | `layout:reset` | `{ layout }` |
 | `project:saved` | `{ name: string }` |
 | `project:loaded` | `{ name: string }` |
+| `project:dirty` | `{}` |
 | `status` | `{ message: string; level: 'info' \| 'warn' \| 'error' }` |
 | `command:executed` | `{ id: string }` |
 
@@ -165,7 +167,48 @@ Other string event names are allowed; their payload is `unknown` unless you agre
 
 `createEditor({ root, world?, storage? })` mounts the dock, menu bar, toolbar, command palette, and status bar into `root`. It registers a placeholder for any standard panel id that is still empty. Layout (zone sizes, tab order, collapsed dock) is stored in `localStorage` under `jurfi.editor.layout`. Reset Layout restores the default and clears that key.
 
-Project files are JSON (`format: 'jurfi-project'`, version 1) containing the world snapshot and the layout. File → Save downloads that JSON. File → Open reads a file the user picks. An autosave of the same document is written to `localStorage` under `jurfi.editor.autosave` and restored on the next launch.
+Project files are JSON (`format: 'jurfi-project'`, version 1) containing the world snapshot, the layout, and a `sections` object. File → Save downloads that JSON. File → Open reads a file the user picks. An autosave of the same document is written to `localStorage` under `jurfi.editor.autosave` and restored on the next launch. A file written before `sections` existed still loads; its section bag is empty.
+
+## Project sections
+
+Panels that own data outside the world snapshot register a section. The shell stores each section under its id and restores it on open and on autosave restore.
+
+```ts
+import { registerProjectSection, type ProjectSection } from '@jurfi/editor';
+
+const section: ProjectSection = {
+  save: () => ({ yaw: 0.4, pitch: 0.2 }),
+  load(data: unknown) {
+    /* replace this panel's document from `data` */
+  },
+};
+
+const unregister = registerProjectSection('camera', section);
+```
+
+`registerProjectSection(id, { save, load })` returns an unregister function. Unregister removes the section only when that registration is still current; registering the same id again replaces it. `save` must return JSON (`null`, boolean, number, string, array, or plain object). `undefined` is stored as `null`. A `save` that throws, or that returns a value `JSON.stringify` cannot clone, is omitted and a warning is written.
+
+`writeProject` / File → Save / autosave call every `save`. `readProject` keeps the bag but does not call `load`. The shell calls `applyProjectSections` on open and when it restores an autosave:
+
+- An id in the file with no current registration is an unknown section. It is skipped and `console.warn` reports `Skipped unknown project section "<id>"`. `load` is not called.
+- A registration whose id is absent from the file is a missing section. It is skipped with `Skipped missing project section "<id>"`. `load` is not called.
+- A present, registered id is passed to `load`.
+
+`applyProjectSections(data)` returns `{ id, reason: 'unknown' | 'missing', message }[]` for those skips. Opening a file that skipped sections also sets the status bar to a warning.
+
+World edits already schedule autosave through `world.subscribe`. A section that changes without touching the world calls `ctx.project.markDirty()`. That emits `project:dirty`, and the shell schedules the same autosave. `markDirty` does not write the file itself.
+
+This package does not register `hierarchy.flags` or `assets.library`. The Inspector & Assets UI owner registers those two ids against this hook:
+
+| id | Owner | Contents |
+| --- | --- | --- |
+| `hierarchy.flags` | Inspector & Assets UI | Visibility and lock flags. This package does not register it. |
+| `assets.library` | Inspector & Assets UI | Asset library. This package does not register it. |
+| `nodegraph` | `registerNodeGraphPanel()` | Graph document. A missing section still reads the legacy `jurfi.editor.nodegraph` key once. |
+| `timeline` | `registerTimelinePanel()` | `{ clip, time }` |
+| `camera` | `registerViewportPanel()` | Orbit camera, orthographic camera, and 2D/3D view |
+
+`hierarchy.flags` and `assets.library` stay unregistered until that owner calls `registerProjectSection`. The node graph, timeline, and viewport register their own sections. Autosave listens to `world.subscribe`, to `World.onChange` when the document is a core world (that is the world change stream; `onChanged` is per entity), and to `project:dirty`.
 
 ## Node graph
 
@@ -185,7 +228,7 @@ Graph document types come from `@jurfi/script`: `GraphDoc`, `NodeRegistry`, and 
 
 The view implements `DebugSource`. Play mode loads the graph with `createScriptRuntime`, calls `attachDebugger`, and paints `{ kind: 'wire', wireId, value }` and `{ kind: 'node', nodeId, phase: 'enter' | 'exit' }` through `onEvent`. `wireId` is the edge id when the edge has one, otherwise `fromNode:fromPin->toNode:toPin`. `setDebugSource` installs an extra listener for those same events, and `null` clears the overlay.
 
-Every committed edit is on the undo stack, and `getDocument()` is JSON. The panel writes that JSON to `localStorage` under `jurfi.editor.nodegraph` after each commit so a reload can restore it. The shell project file and `jurfi.editor.autosave` still store the world and layout only. A drag or a text field is not in the document until the gesture or the field commits.
+Every committed edit is on the undo stack, and `getDocument()` is JSON. The panel registers the `nodegraph` project section, so that document is part of the project file and `jurfi.editor.autosave`. A graph previously stored only under `jurfi.editor.nodegraph` is still read when the section is missing, then dropped once a project section loads. A drag or a text field is not in the document until the gesture or the field commits.
 
 ```bash
 pnpm --filter @jurfi/ui build

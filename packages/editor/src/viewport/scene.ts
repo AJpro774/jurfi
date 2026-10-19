@@ -25,12 +25,11 @@ import type { EditorContext } from '../context';
 import { dot, IDENTITY_QUAT, length, sub, transformsClose } from '../math/vec';
 import type { Quat, Transform, Vec3 } from '../math/vec';
 import type { EntityRecord } from '../world';
+import { readCameraDocument, replaceCameraDocument } from './camera-document';
 import { entityShape, entityTransform, hasTransform, isDrawable, writeTransform } from './components';
 import type { EntityShape } from './components';
 import { transformUndo } from './history';
 import {
-  createOrbitCamera,
-  createOrthoCamera,
   focusBounds,
   focusOrbit,
   focusOrtho,
@@ -172,10 +171,11 @@ export function mountScene(options: SceneOptions): SceneHandle {
   fill.position.set(-6, 3, -4);
   world.add(ambient, key, fill, grid3d.root, grid2d.root, gizmo.root);
 
-  let orbit: OrbitCamera = createOrbitCamera();
-  let orthoState: OrthoCamera = createOrthoCamera();
+  const storedCamera = readCameraDocument();
+  let orbit: OrbitCamera = storedCamera.orbit;
+  let orthoState: OrthoCamera = storedCamera.ortho;
   const settings = {
-    view: '3d' as ViewMode,
+    view: storedCamera.view,
     shading: 'lit' as ShadingMode,
     gizmo: ctx.getGizmoMode(),
     space: 'world' as GizmoSpace,
@@ -184,6 +184,10 @@ export function mountScene(options: SceneOptions): SceneHandle {
     rotateSnap: (15 * Math.PI) / 180,
     scaleSnap: 0.25,
     grid: true,
+  };
+  const publishCamera = (): void => {
+    replaceCameraDocument({ view: settings.view, orbit, ortho: orthoState });
+    ctx.project.markDirty();
   };
   const views = new Map<string, EntityView>();
   let drag: Drag | null = null;
@@ -609,6 +613,7 @@ export function mountScene(options: SceneOptions): SceneHandle {
     if (drag.kind === 'orbit') {
       orbit = orbitDrag(orbit, event.clientX - drag.x, event.clientY - drag.y);
       drag = { ...drag, x: event.clientX, y: event.clientY };
+      publishCamera();
       return;
     }
     if (drag.kind === 'pan') {
@@ -617,6 +622,7 @@ export function mountScene(options: SceneOptions): SceneHandle {
       drag = { ...drag, x: event.clientX, y: event.clientY };
       if (settings.view === '3d') orbit = panOrbit(orbit, dx, dy, stage.clientHeight);
       else orthoState = panOrtho(orthoState, dx, dy, stage.clientHeight);
+      publishCamera();
       return;
     }
     moveGizmo(event);
@@ -637,6 +643,7 @@ export function mountScene(options: SceneOptions): SceneHandle {
     const delta = normalizeWheel(event.deltaY, event.deltaMode);
     if (settings.view === '3d') orbit = zoomOrbit(orbit, delta);
     else orthoState = zoomOrtho(orthoState, delta);
+    publishCamera();
   }
 
   function onContextMenu(event: Event): void {
@@ -691,6 +698,7 @@ export function mountScene(options: SceneOptions): SceneHandle {
       settings.view = mode;
       updateGrid();
       updateGizmo();
+      publishCamera();
     },
     setShading(mode) {
       settings.shading = mode;
@@ -721,6 +729,7 @@ export function mountScene(options: SceneOptions): SceneHandle {
       const bounds = focusBounds(items) ?? { center: { x: 0, y: 0, z: 0 }, radius: 2 };
       if (settings.view === '3d') orbit = focusOrbit(orbit, bounds.center, bounds.radius);
       else orthoState = focusOrtho(orthoState, bounds.center, bounds.radius);
+      publishCamera();
     },
     applyPalette,
     resize: () => resize(true),

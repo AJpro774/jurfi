@@ -41,6 +41,8 @@ export interface GraphController {
   copy(selection: { nodes: readonly string[]; comments: readonly string[]; groups: readonly string[] }): GraphClipboard;
   paste(clipboard: GraphClipboard, offset: GraphPoint): { nodes: string[]; comments: string[]; groups: string[] } | null;
   replaceDocument(document: GraphDoc): void;
+  /** Replace the document without recording an undo step. Project load uses this. */
+  resetDocument(document: GraphDoc): void;
 }
 
 export interface GraphEndpointPair {
@@ -241,6 +243,10 @@ export function createGraphController(options: {
         draft.comments = next.comments;
         draft.subgraphs = next.subgraphs;
       });
+    },
+    resetDocument(document) {
+      doc = normalizeDoc(document);
+      emit();
     },
   };
 }

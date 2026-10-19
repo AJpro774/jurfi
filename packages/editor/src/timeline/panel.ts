@@ -272,6 +272,7 @@ export function mountTimeline(host: HTMLElement, ctx: EditorContext, clip: Clip,
         replaceClip(clip, after);
       },
     });
+    ctx.project.markDirty();
   }
 
   function seekTo(time: number): void {
