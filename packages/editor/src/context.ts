@@ -1,5 +1,7 @@
 import { createEditorBus, type EditorBus, type GizmoMode, type PlayState } from './bus';
 import { createCommandRegistry, type CommandRegistry } from './commands';
+import { playbackClip, playbackGraph } from './playback';
+import { createPlaySession } from './play-runtime';
 import { createSelection, type Selection } from './selection';
 import { createUndoStack, type UndoStack } from './undo';
 import { createWorld, type EditorWorld, type WorldSnapshot } from './world';
@@ -50,6 +52,16 @@ export function createEditorContext(options: EditorContextOptions = {}): EditorC
     bus.emit('world:changed', { snapshot: world.serialize() });
   });
 
+  const playSession = createPlaySession({
+    world,
+    graph: playbackGraph,
+    clip: playbackClip,
+    onLog(entry) {
+      bus.emit('log', entry);
+      bus.emit('status', { message: entry.message, level: entry.level });
+    },
+  });
+
   const commands: CommandRegistry = {
     register: (command) => registry.register(command),
     get: (id) => registry.get(id),
@@ -83,15 +95,18 @@ export function createEditorContext(options: EditorContextOptions = {}): EditorC
       captureSnapshot();
       if (playState === 'playing') return;
       setPlayState('playing');
+      playSession.play();
       bus.emit('status', { message: 'Playing', level: 'info' });
     },
     pause() {
       if (playState !== 'playing') return;
+      playSession.pause();
       setPlayState('paused');
       bus.emit('status', { message: 'Paused', level: 'info' });
     },
     stop() {
       if (playState === 'editing') return;
+      playSession.stop();
       if (playSnapshot) world.deserialize(playSnapshot);
       playSnapshot = null;
       undo.clear();
@@ -102,6 +117,7 @@ export function createEditorContext(options: EditorContextOptions = {}): EditorC
     },
     step() {
       captureSnapshot();
+      playSession.step();
       if (playState === 'playing') setPlayState('paused');
       else if (playState === 'editing') setPlayState('paused');
       bus.emit('play:step', { state: playState });
