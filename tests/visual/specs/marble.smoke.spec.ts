@@ -41,6 +41,14 @@ async function loadAndRun(page: Page, steps: number): Promise<string> {
   await page.addInitScript(freezeRaf);
   await page.goto('/marble/?test=1', { waitUntil: 'load' });
   await page.waitForSelector('#game', { state: 'visible' });
+  // Marble needs WebGL2 under ?test=1. If the browser/env can't create one (e.g. Firefox blocklist on a GPU-less
+  // container), skip with an annotation instead of timing out on window.__marble.
+  const gl2 = await page.evaluate(() => document.createElement('canvas').getContext('webgl2') !== null);
+  if (!gl2) {
+    const ua = await page.evaluate(() => navigator.userAgent);
+    test.info().annotations.push({ type: 'no-webgl2', description: `no WebGL2 in this browser/env (${ua}); ${diag.length} console/page errors: ${diag.slice(0, 3).join(' | ')}` });
+    test.skip(true, 'no WebGL2 in this browser/env');
+  }
   try {
     await page.waitForFunction(() => !!window.__marble, undefined, { timeout: 15_000 });
   } catch (e) {
