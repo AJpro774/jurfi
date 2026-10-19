@@ -8,7 +8,7 @@ Source: `apps/samples/marble`. Run `pnpm --filter @jurfi/samples dev` and open `
 
 ## 2. Game logic (`game.ts`)
 
-`MarbleGame.step(dt, ax, az, jump)` is a pure fixed-step update (no DOM, no three). It uses `clamp` from `@jurfi/core`. `@jurfi/physics` currently exports only 2D `overlaps` and `Aabb`, and no Rapier, so the marble is integrated by hand: acceleration, drag, wall bounce, and roll angle (`distance / radius`) for rendering. Gem positions come from the seeded RNG.
+`MarbleGame.step(dt, ax, az, jump)` is a pure fixed-step update (no DOM, no three). It uses `clamp` from `@jurfi/core`. The marble is still integrated by hand (acceleration, drag, wall bounce, and roll angle `distance / radius`). `@jurfi/physics` can simulate 3D rigid bodies through Rapier, but this sample does not use that world. Gem positions come from the seeded RNG.
 
 ## 3. Input (keyboard and touch, no device tilt)
 
