@@ -16,7 +16,8 @@ import {
   type ZoneId,
 } from './layout';
 import { ensurePlaceholderPanels } from './panels';
-import { AUTOSAVE_STORAGE_KEY, applyWorldSnapshot, downloadText, readProject, writeProject } from './project';
+import { AUTOSAVE_STORAGE_KEY, applyProjectSections, applyWorldSnapshot, downloadText, readProject, writeProject } from './project';
+import type { ProjectSectionWarning } from './project-sections';
 import { getPanel, listPanels, subscribePanels } from './registry';
 import { eventToShortcut, formatShortcut } from './shortcuts';
 import { browserStore, type KeyValueStore } from './storage';
@@ -63,6 +64,7 @@ export function createEditor(options: CreateEditorOptions): Editor {
   const cleanups: (() => void)[] = [];
   const zones = new Map<ZoneId, ZoneView>();
   const mounted = new Map<ZoneId, { id: string | null; dispose: () => void }>();
+  let sectionWarnings: ProjectSectionWarning[] = [];
   let layout = loadLayout();
   let autosaveTimer: ReturnType<typeof setTimeout> | undefined;
   let draggingId: string | null = null;
@@ -202,6 +204,13 @@ export function createEditor(options: CreateEditorOptions): Editor {
   cleanups.push(ctx.selection.subscribe(syncChrome));
   cleanups.push(ctx.undo.subscribe(syncChrome));
   cleanups.push(ctx.world.subscribe(() => scheduleAutosave()));
+  cleanups.push(ctx.bus.on('project:dirty', () => scheduleAutosave()));
+  if (sectionWarnings.length > 0) {
+    ctx.bus.emit('status', {
+      message: sectionWarnings.map((warning) => warning.message).join('; '),
+      level: 'warn',
+    });
+  }
   cleanups.push(ctx.bus.on('command:executed', syncChrome));
 
   const onKey = (event: KeyboardEvent): void => {
@@ -297,6 +306,7 @@ export function createEditor(options: CreateEditorOptions): Editor {
     } else {
       next = tryParseLayout(storage.getItem(layoutKey) ?? '') ?? defaultLayout();
     }
+    if (project) sectionWarnings = applyProjectSections(project.sections);
     for (const panel of listPanels()) {
       const placed = ZONES.some((zone) => next.zones[zone].tabs.includes(panel.id));
       if (!placed) next = movePanel(next, panel.id, 'bottom');
@@ -555,6 +565,7 @@ export function createEditor(options: CreateEditorOptions): Editor {
     }
     applyWorldSnapshot(ctx, project.world);
     layout = project.layout;
+    const warnings = applyProjectSections(project.sections);
     paint(true);
     flushAutosave();
     try {
@@ -563,7 +574,13 @@ export function createEditor(options: CreateEditorOptions): Editor {
       /* autosave already reported */
     }
     ctx.bus.emit('project:loaded', { name });
-    ctx.bus.emit('status', { message: `Opened ${name}`, level: 'info' });
+    const skipped = warnings.length > 0
+      ? ` (${String(warnings.length)} section${warnings.length === 1 ? '' : 's'} skipped)`
+      : '';
+    ctx.bus.emit('status', {
+      message: `Opened ${name}${skipped}`,
+      level: warnings.length > 0 ? 'warn' : 'info',
+    });
   }
 
   function saveProject(): void {
