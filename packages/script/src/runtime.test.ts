@@ -6,7 +6,6 @@ import { createNodeRegistry } from './registry';
 import { runScripts } from './callback';
 import {
   createScriptRuntime,
-  ScriptRuntimeError,
   type DebugEvent,
   type DebugSource,
 } from './runtime';
@@ -364,21 +363,25 @@ describe('runtime flow, data, and entities', () => {
     rt.start();
     expect(world.getComponent(world.self, 'Health')).toBe(4);
 
-    const spinning = createScriptRuntime({ maxSteps: 20 });
+    const reported: string[] = [];
+    const spinning = createScriptRuntime({
+      maxSteps: 20,
+      onNodeError(fault) {
+        reported.push(fault.nodeId);
+      },
+    });
     spinning.load(
       g(
         [n('start', 'core/OnStart'), n('loop', 'core/While', { pins: { condition: true } })],
         [e('start', 'then', 'loop', 'exec')],
       ),
     );
-    expect(() => spinning.start()).toThrow(ScriptRuntimeError);
-    try {
-      spinning.start();
-    } catch (error) {
-      expect(error).toBeInstanceOf(ScriptRuntimeError);
-      expect((error as ScriptRuntimeError).code).toBe('max-steps');
-    }
-    expect(spinning.running).toBe(false);
+    expect(() => spinning.start()).not.toThrow();
+    expect(spinning.running).toBe(true);
+    expect(
+      spinning.nodeErrors.some((fault) => fault.nodeId === 'loop' && fault.message.includes('Exceeded')),
+    ).toBe(true);
+    expect(reported).toContain('loop');
     expect(() => spinning.tick(1)).not.toThrow();
   });
 
