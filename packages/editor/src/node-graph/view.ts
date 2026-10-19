@@ -38,6 +38,8 @@ const CATEGORY_COLOR: Record<string, string> = {
   compare: 'var(--ref-accent-300)',
   entity: 'var(--text-2)',
   graph: 'var(--border-strong)',
+  clip: 'var(--ref-yellow-400)',
+  blend: 'var(--ng-pin-pose)',
 };
 
 type Drag =
@@ -392,7 +394,7 @@ export class NodeGraphView implements DebugSource {
     if (this.selection.nodes.includes(node.id)) el.classList.add('is-selected');
     const positioned = this.positioned(node);
     const pins = nodePins(positioned, this.registry);
-    const fields = nodeFields(definition);
+    const fields = nodeFields(definition, node);
     const rect = nodeRect(positioned, pins, fields.length);
     el.style.transform = `translate(${positioned.pos.x}px, ${positioned.pos.y}px)`;
     el.style.minHeight = `${rect.h}px`;
@@ -1227,13 +1229,13 @@ export class NodeGraphView implements DebugSource {
     return this.previewGroup?.get(id) ?? base;
   }
 
-  private fieldCount(type: string): number {
-    return nodeFields(this.registry.get(type)).length;
+  private fieldCount(node: GraphNode): number {
+    return nodeFields(this.registry.get(node.type), node).length;
   }
 
   private nodeBox(node: GraphNode): GraphRect {
     const positioned = this.positioned(node);
-    return nodeRect(positioned, nodePins(positioned, this.registry), this.fieldCount(node.type));
+    return nodeRect(positioned, nodePins(positioned, this.registry), this.fieldCount(node));
   }
 
   private anchor(endpoint: PinEndpoint): Vec2 | null {

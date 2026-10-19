@@ -562,4 +562,143 @@
     border-right: none;
     border-bottom: 1px solid var(--border-subtle);
   }
+
+  .ng-blend {
+    flex-direction: column;
+  }
+
+  .ng-machine-host {
+    width: auto;
+    max-height: 40%;
+    border-left: none;
+    border-top: 1px solid var(--border-subtle);
+  }
+}
+
+.ng-domain {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.ng-domain-bar {
+  display: flex;
+  flex: none;
+  gap: var(--space-2);
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.ng-domain-button {
+  height: var(--btn-h);
+  padding-inline: var(--btn-px);
+  color: var(--text-2);
+  background: var(--btn-bg);
+  border: 1px solid var(--btn-border);
+  border-radius: var(--btn-radius);
+  font: inherit;
+  cursor: pointer;
+}
+
+.ng-domain-button[aria-selected='true'] {
+  color: var(--text-1);
+  background: var(--surface-3);
+  border-color: var(--accent);
+}
+
+.ng-domain-host {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.ng-blend {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.ng-blend-canvas {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.ng-machine-host {
+  flex: none;
+  width: 280px;
+  min-height: 0;
+  overflow: auto;
+  background: var(--surface-1);
+  border-left: 1px solid var(--border-subtle);
+}
+
+.ng-machine {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+
+.ng-machine-title,
+.ng-machine-heading {
+  margin: 0;
+  color: var(--text-1);
+  font-size: var(--ref-font-size-3);
+  font-weight: var(--ref-font-weight-bold);
+}
+
+.ng-machine-section {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  justify-content: space-between;
+  margin-top: var(--space-2);
+}
+
+.ng-machine-warn {
+  margin: 0;
+  color: var(--danger);
+}
+
+.ng-machine-card,
+.ng-condition,
+.ng-machine-field {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  align-items: center;
+}
+
+.ng-machine-id,
+.ng-machine-label {
+  color: var(--text-2);
+  font-size: var(--ref-font-size-2);
+}
+
+.ng-machine-input,
+.ng-machine-button {
+  height: var(--btn-h);
+  padding-inline: var(--space-2);
+  color: var(--text-1);
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--btn-radius);
+  font: inherit;
+}
+
+.ng-machine-button {
+  cursor: pointer;
+}
+
+.ng-machine-input {
+  min-width: 0;
+  flex: 1;
 }

@@ -41,6 +41,8 @@ export interface GraphController {
   copy(selection: { nodes: readonly string[]; comments: readonly string[]; groups: readonly string[] }): GraphClipboard;
   paste(clipboard: GraphClipboard, offset: GraphPoint): { nodes: string[]; comments: string[]; groups: string[] } | null;
   replaceDocument(document: GraphDoc): void;
+  /** Apply a mutation, then push it. Used by blend-tree metadata edits. */
+  edit(label: string, mutate: (draft: GraphDoc) => void): boolean;
 }
 
 export interface GraphEndpointPair {
@@ -240,7 +242,11 @@ export function createGraphController(options: {
         draft.groups = next.groups;
         draft.comments = next.comments;
         draft.subgraphs = next.subgraphs;
+        copyBlendMeta(next, draft);
       });
+    },
+    edit(label, mutate) {
+      return commit(label, mutate);
     },
   };
 }
@@ -263,4 +269,11 @@ export function normalizeDoc(document: GraphDoc): GraphDoc {
 
 function cloneDoc(document: GraphDoc): GraphDoc {
   return structuredClone(document);
+}
+
+function copyBlendMeta(from: GraphDoc, to: GraphDoc): void {
+  const source = from as GraphDoc & { blend?: unknown };
+  const target = to as GraphDoc & { blend?: unknown };
+  if (source.blend === undefined) delete target.blend;
+  else target.blend = structuredClone(source.blend);
 }

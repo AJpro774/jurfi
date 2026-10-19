@@ -1,4 +1,8 @@
 export { identityGraphAdapter } from './adapter';
+export { blendTreeAdapter, blendTreeFromGraph, blendTreeToGraph } from './blend/document';
+export { createDemoBlendTree } from './blend/demo';
+export { createBlendRegistry } from './blend/registry';
+export { BLEND_AUTOSAVE_KEY } from './blend/workspace';
 export type { GraphDocAdapter } from './adapter';
 export { extractClipboard, pasteClipboard } from './clipboard';
 export type { GraphClipboard } from './clipboard';
