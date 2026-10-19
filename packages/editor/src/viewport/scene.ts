@@ -1,4 +1,4 @@
-import type { Disposable } from '@jurfi/core';
+import type { Disposable, Entity } from '@jurfi/core';
 import { createRenderer, detectBackend } from '@jurfi/render';
 import {
   AmbientLight,
@@ -22,12 +22,20 @@ import {
 } from 'three';
 import type { Material } from 'three';
 import type { EditorContext } from '../context';
-import { dot, IDENTITY_QUAT, length, sub, transformsClose } from '../math/vec';
+import { dot, IDENTITY_QUAT, length, sub } from '../math/vec';
 import type { Quat, Transform, Vec3 } from '../math/vec';
-import type { EntityRecord } from '../world';
-import { entityShape, entityTransform, hasTransform, isDrawable, writeTransform } from './components';
-import type { EntityShape } from './components';
-import { transformUndo } from './history';
+import {
+  baseline,
+  ecsOf,
+  entityShape,
+  isDrawable,
+  readTransform,
+  resolveEntity,
+  stableId,
+} from './components';
+import type { DragBaseline, EntityShape } from './components';
+import { cancelTransformDrag, finishTransformDrag, previewTransformDrag } from './history';
+import type { DragSession } from './history';
 import {
   createOrbitCamera,
   createOrthoCamera,
@@ -62,7 +70,7 @@ import {
 } from './gizmo-math';
 import type { AxisId, GizmoHandle, GizmoSpace, PlaneId } from './gizmo-math';
 import { createGizmo } from './gizmos';
-import { buildGridSegments } from './grid-math';
+import { gridBounds } from './grid-math';
 import { createGridVisual } from './grid-view';
 import type { IdBufferPicker } from './picking';
 import { pickWithFallback } from './picking';
@@ -95,6 +103,9 @@ interface EntityView {
   mesh: Mesh;
   outline: LineSegments;
   shape: EntityShape;
+  entity: Entity;
+  id: string;
+  offChanged: () => void;
 }
 
 type Drag =
@@ -107,7 +118,7 @@ type Drag =
       normal: Vec3;
       pivot: Vec3;
       startHit: Vec3;
-      before: Map<string, Transform>;
+      before: Map<Entity, DragBaseline>;
     }
   | {
       kind: 'translate-plane';
@@ -116,7 +127,7 @@ type Drag =
       normal: Vec3;
       pivot: Vec3;
       startHit: Vec3;
-      before: Map<string, Transform>;
+      before: Map<Entity, DragBaseline>;
     }
   | {
       kind: 'rotate';
@@ -126,7 +137,7 @@ type Drag =
       pivot: Vec3;
       startVec: Vec3;
       space: GizmoSpace;
-      before: Map<string, Transform>;
+      before: Map<Entity, DragBaseline>;
     }
   | {
       kind: 'scale';
@@ -137,7 +148,7 @@ type Drag =
       pivot: Vec3;
       startDist: number;
       space: GizmoSpace;
-      before: Map<string, Transform>;
+      before: Map<Entity, DragBaseline>;
     };
 
 export function mountScene(options: SceneOptions): SceneHandle {
@@ -161,10 +172,9 @@ export function mountScene(options: SceneOptions): SceneHandle {
     z: palette.axisZ,
     highlight: palette.highlight,
   });
-  const grid3d = createGridVisual(buildGridSegments(20, 1, 'xz'), palette.grid, palette.gridAxis);
-  const grid2d = createGridVisual(buildGridSegments(20, 1, 'xy'), palette.grid, palette.gridAxis);
-  grid3d.root.position.y = -0.001;
-  grid2d.root.position.z = -0.01;
+  const gridKind = detectBackend() === 'webgpu' ? 'node' : 'glsl';
+  const grid3d = createGridVisual('xz', palette.grid, palette.gridAxis, gridKind);
+  const grid2d = createGridVisual('xy', palette.grid, palette.gridAxis, gridKind);
   const ambient = new AmbientLight(palette.light, 0.65);
   const key = new DirectionalLight(palette.light, 1.6);
   key.position.set(4, 8, 6);
@@ -186,8 +196,9 @@ export function mountScene(options: SceneOptions): SceneHandle {
     grid: true,
   };
   const views = new Map<string, EntityView>();
+  const ecs = ecsOf(ctx.world);
+  const dragSession: DragSession = { active: false };
   let drag: Drag | null = null;
-  let dragAbsent = new Set<string>();
   let playing = ctx.getPlayState() !== 'editing';
   let idBuffer: IdBufferPicker | null = null;
   let renderer: Awaited<ReturnType<typeof createRenderer>> | null = null;
@@ -255,32 +266,31 @@ export function mountScene(options: SceneOptions): SceneHandle {
     };
   }
 
-  function selectedDrawables(): EntityRecord[] {
-    const records: EntityRecord[] = [];
+  function selectedEntities(): { id: string; entity: Entity }[] {
+    if (!ecs) return [];
+    const records: { id: string; entity: Entity }[] = [];
     for (const id of ctx.selection.get()) {
-      const entity = ctx.world.get(id);
-      if (entity && isDrawable(entity)) records.push(entity);
+      const entity = resolveEntity(ecs, id);
+      if (entity && isDrawable(ecs, entity)) records.push({ id, entity });
     }
     return records;
   }
 
   function primaryRotation(): Quat {
-    const selected = selectedDrawables();
-    const primary = selected.at(-1);
-    return primary ? entityTransform(primary).rotation : IDENTITY_QUAT;
+    if (!ecs) return IDENTITY_QUAT;
+    const primary = selectedEntities().at(-1);
+    return primary ? readTransform(ecs, primary.entity).rotation : IDENTITY_QUAT;
   }
 
   function currentPivot(): Vec3 | null {
-    return selectionPivot(selectedDrawables().map((entity) => entityTransform(entity).position));
+    if (!ecs) return null;
+    return selectionPivot(selectedEntities().map(({ entity }) => readTransform(ecs, entity).position));
   }
 
-  function snapshot(): Map<string, Transform> {
-    const map = new Map<string, Transform>();
-    dragAbsent = new Set();
-    for (const entity of selectedDrawables()) {
-      map.set(entity.id, entityTransform(entity));
-      if (!hasTransform(entity.components)) dragAbsent.add(entity.id);
-    }
+  function snapshot(): Map<Entity, DragBaseline> {
+    const map = new Map<Entity, DragBaseline>();
+    if (!ecs) return map;
+    for (const { entity } of selectedEntities()) map.set(entity, baseline(ecs, entity));
     return map;
   }
 
@@ -303,6 +313,10 @@ export function mountScene(options: SceneOptions): SceneHandle {
   }
 
   function updateGrid(): void {
+    const aspect = Math.max(stage.clientWidth, 1) / Math.max(stage.clientHeight, 1);
+    grid3d.layout(orbit.target, gridBounds(perspective.far, orbit.distance, '3d'));
+    const span = Math.max(orthoState.halfHeight, orthoState.halfHeight * aspect);
+    grid2d.layout(orthoState.center, gridBounds(ortho.far, span, '2d'));
     grid3d.root.visible = settings.grid && settings.view === '3d';
     grid2d.root.visible = settings.grid && settings.view === '2d';
   }
@@ -332,45 +346,63 @@ export function mountScene(options: SceneOptions): SceneHandle {
     view.mesh.removeFromParent();
   }
 
-  function createView(entity: EntityRecord): EntityView {
-    const shape = entityShape(entity);
-    const mesh = new Mesh(geometries[shape], new MeshBasicMaterial({ color: colorFor(shape) }));
-    mesh.name = entity.name;
-    mesh.userData['entityId'] = entity.id;
-    const outline = new LineSegments(new EdgesGeometry(mesh.geometry), new LineBasicMaterial({ color: palette.selection }));
-    outline.raycast = () => undefined;
-    outline.visible = false;
-    mesh.add(outline);
-    world.add(mesh);
-    const view = { mesh, outline, shape };
-    replaceMaterial(view);
-    return view;
+  function dropView(view: EntityView): void {
+    view.offChanged();
+    removeView(view);
+    views.delete(view.id);
   }
 
-  function syncEntities(): void {
-    const seen = new Set<string>();
-    const selected = new Set(ctx.selection.get());
-    for (const entity of ctx.world.entities()) {
-      if (!isDrawable(entity)) continue;
-      seen.add(entity.id);
-      const shape = entityShape(entity);
-      let view = views.get(entity.id);
-      if (!view || view.shape !== shape) {
-        if (view) removeView(view);
-        view = createView(entity);
-        views.set(entity.id, view);
-      }
-      const transform = entityTransform(entity);
-      view.mesh.position.set(transform.position.x, transform.position.y, transform.position.z);
-      view.mesh.quaternion.set(transform.rotation.x, transform.rotation.y, transform.rotation.z, transform.rotation.w);
-      view.mesh.scale.set(transform.scale.x, transform.scale.y, transform.scale.z);
-      view.mesh.updateMatrixWorld();
-      view.outline.visible = selected.has(entity.id);
+  function ensureView(entity: Entity): void {
+    if (!ecs || !ecs.isAlive(entity)) return;
+    const id = stableId(ecs, entity);
+    if (!isDrawable(ecs, entity)) {
+      const existing = views.get(id);
+      if (existing) dropView(existing);
+      return;
     }
-    for (const [id, view] of views) {
-      if (seen.has(id)) continue;
-      removeView(view);
-      views.delete(id);
+    const shape = entityShape(ecs, entity);
+    let view = views.get(id);
+    if (view && view.entity !== entity) {
+      dropView(view);
+      view = undefined;
+    }
+    if (!view || view.shape !== shape) {
+      if (view) dropView(view);
+      const mesh = new Mesh(geometries[shape], new MeshBasicMaterial({ color: colorFor(shape) }));
+      mesh.name = ecs.getName(entity);
+      mesh.userData['entityId'] = id;
+      const outline = new LineSegments(new EdgesGeometry(mesh.geometry), new LineBasicMaterial({ color: palette.selection }));
+      outline.raycast = () => undefined;
+      outline.visible = false;
+      mesh.add(outline);
+      world.add(mesh);
+      const offChanged = ecs.onChanged(entity, () => {
+        if (disposed) return;
+        ensureView(entity);
+        updateGizmo();
+      });
+      view = { mesh, outline, shape, entity, id, offChanged };
+      views.set(id, view);
+      replaceMaterial(view);
+    }
+    const transform = readTransform(ecs, entity);
+    view.mesh.position.set(transform.position.x, transform.position.y, transform.position.z);
+    view.mesh.quaternion.set(transform.rotation.x, transform.rotation.y, transform.rotation.z, transform.rotation.w);
+    view.mesh.scale.set(transform.scale.x, transform.scale.y, transform.scale.z);
+    view.mesh.name = ecs.getName(entity);
+    view.mesh.updateMatrixWorld();
+    view.outline.visible = ctx.selection.get().includes(id);
+  }
+
+  function reconcile(): void {
+    if (!ecs) return;
+    const live = new Set<string>();
+    for (const entity of ecs.entities()) {
+      live.add(stableId(ecs, entity));
+      ensureView(entity);
+    }
+    for (const view of [...views.values()]) {
+      if (!live.has(view.id)) dropView(view);
     }
     updateGizmo();
   }
@@ -406,6 +438,7 @@ export function mountScene(options: SceneOptions): SceneHandle {
     raf = requestAnimationFrame(frame);
     resize();
     syncCameras();
+    updateGrid();
     updateGizmo();
     try {
       renderer.render(world, activeCamera());
@@ -490,51 +523,44 @@ export function mountScene(options: SceneOptions): SceneHandle {
     return false;
   }
 
-  function applyDrag(id: string, start: Transform, next: Transform): void {
-    const entity = ctx.world.get(id);
-    if (!entity) return;
-    if (transformsClose(start, next) && dragAbsent.has(id)) {
-      if (hasTransform(entity.components)) writeTransform(ctx.world, id, null);
-      return;
-    }
-    if (hasTransform(entity.components) && transformsClose(entityTransform(entity), next)) return;
-    writeTransform(ctx.world, id, next);
+  function dragLabel(kind: Drag['kind']): string {
+    if (kind === 'rotate') return 'Rotate';
+    if (kind === 'scale') return 'Scale';
+    return 'Translate';
   }
 
   function moveGizmo(event: PointerEvent): void {
     const current = drag;
-    if (!current || current.kind === 'orbit' || current.kind === 'pan') return;
+    if (!current || current.kind === 'orbit' || current.kind === 'pan' || !ecs) return;
     setNdc(event.clientX, event.clientY);
     const ray = pointerRay();
     const normal = current.kind === 'rotate' ? current.dir : current.normal;
     const hit = rayPlane(ray.origin, ray.dir, current.pivot, normal);
     if (!hit) return;
+    const after = new Map<Entity, Transform>();
     if (current.kind === 'translate') {
       const delta = dot(sub(hit, current.startHit), current.dir);
-      for (const [id, start] of current.before) {
-        applyDrag(id, start, dragTranslate(start, current.dir, delta, snapOf(settings.translateSnap)));
+      for (const [entity, start] of current.before) {
+        after.set(entity, dragTranslate(start.transform, current.dir, delta, snapOf(settings.translateSnap)));
       }
-      return;
-    }
-    if (current.kind === 'translate-plane') {
+    } else if (current.kind === 'translate-plane') {
       const delta = sub(hit, current.startHit);
-      for (const [id, start] of current.before) {
-        applyDrag(id, start, dragTranslatePlane(start, delta, snapOf(settings.translateSnap), planeMask(current.plane)));
+      for (const [entity, start] of current.before) {
+        after.set(entity, dragTranslatePlane(start.transform, delta, snapOf(settings.translateSnap), planeMask(current.plane)));
       }
-      return;
-    }
-    if (current.kind === 'rotate') {
+    } else if (current.kind === 'rotate') {
       const angle = signedAngle(current.startVec, sub(hit, current.pivot), current.dir);
-      for (const [id, start] of current.before) {
-        applyDrag(id, start, dragRotate(start, current.pivot, current.axis, angle, current.space, snapOf(settings.rotateSnap)));
+      for (const [entity, start] of current.before) {
+        after.set(entity, dragRotate(start.transform, current.pivot, current.axis, angle, current.space, snapOf(settings.rotateSnap)));
       }
-      return;
+    } else {
+      const offset = sub(hit, current.pivot);
+      const factor = scaleFactor(current.startDist, current.axis === 'uniform' ? length(offset) : dot(offset, current.dir));
+      for (const [entity, start] of current.before) {
+        after.set(entity, dragScale(start.transform, current.pivot, current.axis, factor, current.space, snapOf(settings.scaleSnap)));
+      }
     }
-    const offset = sub(hit, current.pivot);
-    const factor = scaleFactor(current.startDist, current.axis === 'uniform' ? length(offset) : dot(offset, current.dir));
-    for (const [id, start] of current.before) {
-      applyDrag(id, start, dragScale(start, current.pivot, current.axis, factor, current.space, snapOf(settings.scaleSnap)));
-    }
+    previewTransformDrag(ecs, dragLabel(current.kind), current.before, after, dragSession);
   }
 
   function commitDrag(): void {
@@ -542,24 +568,16 @@ export function mountScene(options: SceneOptions): SceneHandle {
       drag = null;
       return;
     }
-    const after = new Map<string, Transform>();
-    for (const id of drag.before.keys()) {
-      const entity = ctx.world.get(id);
-      if (entity) after.set(id, entityTransform(entity));
-    }
-    const label = drag.kind === 'rotate' ? 'Rotate' : drag.kind === 'scale' ? 'Scale' : 'Translate';
-    const command = transformUndo(ctx.world, drag.before, after, label, dragAbsent);
-    dragAbsent = new Set();
+    const current = drag;
     drag = null;
+    if (!ecs) return;
+    const command = finishTransformDrag(ecs, dragLabel(current.kind), current.before, dragSession);
     if (command) ctx.undo.push(command);
   }
 
   function revertDrag(): void {
-    if (drag && drag.kind !== 'orbit' && drag.kind !== 'pan') {
-      for (const [id, start] of drag.before) writeTransform(ctx.world, id, dragAbsent.has(id) ? null : start);
-    }
+    if (drag && drag.kind !== 'orbit' && drag.kind !== 'pan' && ecs) cancelTransformDrag(ecs, dragSession);
     drag = null;
-    dragAbsent = new Set();
   }
 
   function onPointerDown(event: PointerEvent): void {
@@ -650,8 +668,19 @@ export function mountScene(options: SceneOptions): SceneHandle {
   stage.addEventListener('wheel', onWheel, { passive: false });
   stage.addEventListener('contextmenu', onContextMenu);
 
-  const unsubWorld = ctx.world.subscribe(syncEntities);
-  const unsubSelection = ctx.selection.subscribe(syncEntities);
+  const unsubWorld = ctx.world.subscribe(() => {
+    if (!disposed) reconcile();
+  });
+  const unsubSelection = ctx.selection.subscribe(() => {
+    const selected = new Set(ctx.selection.get());
+    for (const view of views.values()) view.outline.visible = selected.has(view.id);
+    updateGizmo();
+  });
+  const offCreated = ecs?.on('created', ({ entity }) => ensureView(entity)) ?? (() => undefined);
+  const offDestroyed = ecs?.on('destroyed', ({ entity }) => {
+    const view = [...views.values()].find((item) => item.entity === entity);
+    if (view) dropView(view);
+  }) ?? (() => undefined);
   const syncPlay = (): void => {
     playing = ctx.getPlayState() !== 'editing';
     if (playing) revertDrag();
@@ -664,7 +693,8 @@ export function mountScene(options: SceneOptions): SceneHandle {
     gizmo.setHover(null);
     updateGizmo();
   });
-  syncEntities();
+  if (!ecs) onError('Viewport requires the core ECS world');
+  reconcile();
   updateGrid();
   syncCameras();
 
@@ -717,7 +747,12 @@ export function mountScene(options: SceneOptions): SceneHandle {
     },
     focusSelection() {
       const items: { position: Vec3; scale: Vec3 }[] = [];
-      for (const entity of selectedDrawables()) items.push(entityTransform(entity));
+      if (ecs) {
+        for (const { entity } of selectedEntities()) {
+          const transform = readTransform(ecs, entity);
+          items.push({ position: transform.position, scale: transform.scale });
+        }
+      }
       const bounds = focusBounds(items) ?? { center: { x: 0, y: 0, z: 0 }, radius: 2 };
       if (settings.view === '3d') orbit = focusOrbit(orbit, bounds.center, bounds.radius);
       else orthoState = focusOrtho(orthoState, bounds.center, bounds.radius);
@@ -739,10 +774,12 @@ export function mountScene(options: SceneOptions): SceneHandle {
       stage.removeEventListener('contextmenu', onContextMenu);
       unsubWorld();
       unsubSelection();
+      offCreated();
+      offDestroyed();
       unsubPlay();
       unsubStep();
       unsubGizmo();
-      for (const view of views.values()) removeView(view);
+      for (const view of [...views.values()]) dropView(view);
       views.clear();
       gizmo.dispose();
       grid3d.dispose();
