@@ -43,7 +43,7 @@ Placeholder ids the shell installs when nobody has claimed them yet:
 | `nodegraph` | Node Graph | Center |
 | `timeline` | Timeline | Center |
 | `inspector` | Inspector | Right |
-| `console` | Console | Bottom dock |
+| `console` | Console | Bottom dock. `registerConsolePanel()` replaces the placeholder with a filterable log of `status` and `log` events. |
 
 `registerContentPanels()` replaces the `hierarchy`, `inspector`, and `assets` placeholders. Call it before `createEditor`, along with `registerViewportPanel()`, `registerNodeGraphPanel()`, and `registerTimelinePanel()`. The editor app opens `createEditorWorld()` from `@jurfi/core`, loads `createDemoSnapshot()`, and calls `seedDemoLibrary(ctx)`.
 
@@ -153,6 +153,7 @@ interface EditorCommand {
 | `project:saved` | `{ name: string }` |
 | `project:loaded` | `{ name: string }` |
 | `status` | `{ message: string; level: 'info' \| 'warn' \| 'error' }` |
+| `log` | `{ level: 'info' \| 'warn' \| 'error'; message: string; source?: string }` |
 | `command:executed` | `{ id: string }` |
 
 Other string event names are allowed; their payload is `unknown` unless you agree on a shape with the listener.

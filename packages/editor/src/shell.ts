@@ -15,6 +15,7 @@ import {
   type LayoutState,
   type ZoneId,
 } from './layout';
+import { registerConsolePanel } from './console';
 import { ensurePlaceholderPanels } from './panels';
 import { AUTOSAVE_STORAGE_KEY, applyWorldSnapshot, downloadText, readProject, writeProject } from './project';
 import { getPanel, listPanels, subscribePanels } from './registry';
@@ -55,6 +56,7 @@ interface MenuItem {
 }
 
 export function createEditor(options: CreateEditorOptions): Editor {
+  if (!getPanel(PANEL.console)) registerConsolePanel();
   ensurePlaceholderPanels();
   const ctx = createEditorContext({ world: options.world });
   const storage = options.storage ?? browserStore();

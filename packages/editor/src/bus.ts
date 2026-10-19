@@ -16,6 +16,8 @@ export interface EditorEventMap {
   'project:saved': { name: string };
   'project:loaded': { name: string };
   'status': { message: string; level: 'info' | 'warn' | 'error' };
+  /** Runtime logs. Play mode emits script errors here. The console panel renders them. */
+  'log': { level: 'info' | 'warn' | 'error'; message: string; source?: string };
   'command:executed': { id: string };
 }
 

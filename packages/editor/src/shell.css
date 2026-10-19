@@ -576,6 +576,35 @@ button.je-row {
   color: var(--text-1);
 }
 
+.je-console {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.je-console-bar {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-2);
+}
+
+.je-console-bar .je-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.je-console-clear {
+  height: var(--btn-h);
+  padding-inline: var(--btn-px);
+  border: 1px solid transparent;
+  border-radius: var(--btn-radius);
+  background: transparent;
+  color: var(--btn-fg);
+  font: inherit;
+  cursor: pointer;
+}
+
 .je-drop-hint {
   margin: 0;
   padding: var(--panel-pad);
