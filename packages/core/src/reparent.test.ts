@@ -183,6 +183,29 @@ describe('parent cycles and ordered children', () => {
     expect(restored.childrenOf(parent)).toEqual([a, b, c]);
     expect(restored.childrenOf(null)).toEqual([parent]);
   });
+
+  it('restores sibling index when a reparent is undone', () => {
+    const world = createWorld();
+    const parent = world.create();
+    const other = world.create();
+    const a = world.create();
+    const b = world.create();
+    const c = world.create();
+    world.setParent(a, parent);
+    world.setParent(b, parent);
+    world.setParent(c, parent);
+    world.transaction('move', () => {
+      world.setParent(b, other, { keepWorldTransform: true, index: 0 });
+    });
+    expect(world.childrenOf(parent)).toEqual([a, c]);
+    expect(world.childrenOf(other)).toEqual([b]);
+    expect(world.undo()).toBe(true);
+    expect(world.getParent(b)).toBe(parent);
+    expect(world.childrenOf(parent)).toEqual([a, b, c]);
+    expect(world.redo()).toBe(true);
+    expect(world.childrenOf(other)).toEqual([b]);
+    expect(world.childrenOf(parent)).toEqual([a, c]);
+  });
 });
 
 function indexOf(scene: RenderScene, entity: Entity): number {

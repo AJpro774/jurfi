@@ -1,15 +1,20 @@
 // @vitest-environment happy-dom
+import { createEditorWorld } from '@jurfi/core';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createEditor, type Editor } from '../shell';
 import { memoryStore } from '../storage';
-import { STANDARD_PANELS } from '../layout';
+import { AUTOSAVE_STORAGE_KEY, readProject, writeProject } from '../project';
+import { defaultLayout, STANDARD_PANELS } from '../layout';
 import { ensurePlaceholderPanels } from '../panels';
 import { getPanel, registerPanel } from '../registry';
 import { createEditorContext, type EditorContext } from '../context';
 import { createWorld } from '../world';
 import { mountAssetBrowser } from './asset-browser';
+import { assetLibrary } from './assets';
+import { bindProjectSections } from './sections';
+import { siblingRecords } from './ecs';
 import { createDemoSnapshot } from './demo';
-import { setFlag } from './edits';
+import { moveEntity, setFlag } from './edits';
 import { readFlags } from './flags';
 import { mountHierarchy } from './hierarchy';
 import { mountInspector } from './inspector';
@@ -31,7 +36,9 @@ afterEach(() => {
 });
 
 function demoContext(): EditorContext {
-  return createEditorContext({ world: createWorld(createDemoSnapshot()) });
+  const world = createEditorWorld();
+  world.deserialize(createDemoSnapshot());
+  return createEditorContext({ world });
 }
 
 function mount(render: (el: HTMLElement, ctx: EditorContext) => () => void, ctx = demoContext()): { host: HTMLElement; ctx: EditorContext } {
@@ -146,9 +153,9 @@ describe('content panels', () => {
   it('toggles visibility through the undo stack', () => {
     const { host, ctx } = mount(mountHierarchy);
     host.querySelector<HTMLButtonElement>('[aria-label="Hide Player"]')?.click();
-    expect(readFlags(ctx.world.get('player')?.components ?? {}).visible).toBe(false);
+    expect(readFlags(ctx, 'player').visible).toBe(false);
     ctx.undo.undo();
-    expect(readFlags(ctx.world.get('player')?.components ?? {}).visible).toBe(true);
+    expect(readFlags(ctx, 'player').visible).toBe(true);
   });
 
   it('reorders a sibling with Alt+ArrowDown', () => {
@@ -159,7 +166,7 @@ describe('content panels', () => {
       altKey: true,
       bubbles: true,
     }));
-    const children = ctx.world.entities().filter((entity) => entity.parentId === 'scene').map((entity) => entity.id);
+    const children = siblingRecords(ctx, 'scene').map((entity) => entity.id);
     expect(children).toEqual(['light', 'camera', 'player', 'ground']);
   });
 
@@ -217,7 +224,7 @@ describe('content panels', () => {
     input.dispatchEvent(new Event('input', { bubbles: true }));
     expect(componentBag(ctx, 'player', 'Transform').position).toEqual([5, 1, 0]);
     expect(componentBag(ctx, 'light', 'Transform').position).toEqual([5, 4, 1]);
-    expect(componentBag(ctx, 'player', 'transform').position).toEqual({ x: 5, y: 1, z: 0 });
+    expect(componentBag(ctx, 'player', 'transform').position).toEqual({ x: 0, y: 1, z: 0 });
   });
 
   it('adds a component and undoes it', () => {
@@ -278,5 +285,60 @@ describe('content panels', () => {
     const name = host.querySelector('[data-asset] .jp-asset-name');
     expect(name?.textContent).toBe('crate.gltf');
     expect(host.querySelector('.jp-thumb')?.textContent).toBe('Mesh');
+  });
+
+  it('keeps the world position when reparenting', () => {
+    const ctx = demoContext();
+    expect(moveEntity(ctx, 'weapon', { parentId: 'ground', beforeId: null })).toBe(true);
+    expect(ctx.world.get('weapon')?.parentId).toBe('ground');
+    const position = componentBag(ctx, 'weapon', 'Transform').position;
+    expect(position).toEqual([expect.closeTo(0.3, 4), expect.closeTo(1.2, 4), expect.closeTo(0.4, 4)]);
+    ctx.undo.undo();
+    expect(ctx.world.get('weapon')?.parentId).toBe('player');
+    expect(componentBag(ctx, 'weapon', 'Transform').position).toEqual([0.3, 0.2, 0.4]);
+  });
+
+  it('creates and deletes an entity from the hierarchy menu', () => {
+    const { host, ctx } = mount(mountHierarchy);
+    const player = host.querySelector<HTMLElement>('[data-id="player"]');
+    if (!player) throw new Error('missing player');
+    player.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 12, clientY: 12 }));
+    const createChild = [...host.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((button) => button.textContent === 'Create Child');
+    createChild?.click();
+    expect(ctx.world.get('entity-1')?.parentId).toBe('player');
+    expect(ctx.world.get('entity-1')?.name).toBe('Entity');
+    ctx.undo.undo();
+    expect(ctx.world.get('entity-1')).toBeUndefined();
+
+    host.querySelector<HTMLElement>('[data-id="weapon"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    host.querySelector<HTMLElement>('[data-id="weapon"]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
+    expect(ctx.world.get('weapon')).toBeUndefined();
+    ctx.undo.undo();
+    expect(ctx.world.get('weapon')?.parentId).toBe('player');
+  });
+
+  it('saves flags and the asset library in the project file', () => {
+    const ctx = demoContext();
+    bindProjectSections(ctx);
+    setFlag(ctx, 'player', 'visible', false);
+    assetLibrary(ctx).insertRecord({ id: 'hero', name: 'hero.png', folderId: 'textures', kind: 'texture', url: 'data:image/png,hero' });
+    const json = writeProject(ctx.world, defaultLayout());
+    const saved = JSON.parse(json) as { sections: Record<string, unknown> };
+    expect(saved.sections['hierarchy.flags']).toMatchObject({ player: { visible: false } });
+    expect(saved.sections['assets.library']).toMatchObject({
+      assets: [expect.objectContaining({ id: 'hero', name: 'hero.png' })],
+    });
+
+    const storage = memoryStore();
+    storage.setItem(AUTOSAVE_STORAGE_KEY, json);
+    const root = document.createElement('div');
+    document.body.append(root);
+    cleanups.push(() => root.remove());
+    const world = createEditorWorld();
+    world.deserialize(createDemoSnapshot());
+    editor = createEditor({ root, world, storage, restoreAutosave: true });
+    expect(readFlags(editor.ctx, 'player').visible).toBe(false);
+    expect(assetLibrary(editor.ctx).assets().some((asset) => asset.name === 'hero.png')).toBe(true);
+    expect(readProject(json)?.sections['assets.library']).toBeTruthy();
   });
 });

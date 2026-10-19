@@ -35,7 +35,8 @@ export type WorldPatch =
   | { readonly op: 'setVariable'; readonly entity: Entity; readonly name: string; readonly value: unknown }
   | { readonly op: 'deleteVariable'; readonly entity: Entity; readonly name: string }
   | { readonly op: 'setName'; readonly entity: Entity; readonly name: string }
-  | { readonly op: 'setParent'; readonly entity: Entity; readonly parent: Entity | null };
+  | { readonly op: 'setParent'; readonly entity: Entity; readonly parent: Entity | null; readonly index?: number }
+  | { readonly op: 'setAlias'; readonly entity: Entity; readonly alias: string | null };
 
 /** One committed edit, undo, or redo. Autosave listens to this stream. */
 export interface WorldChange {

@@ -51,6 +51,9 @@ export {
 } from './project';
 export type { ProjectFile } from './project';
 
+export { registerProjectSection } from './project-sections';
+export type { ProjectSection } from './project-sections';
+
 export { browserStore, memoryStore } from './storage';
 export type { KeyValueStore } from './storage';
 

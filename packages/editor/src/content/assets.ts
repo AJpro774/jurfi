@@ -23,6 +23,7 @@ export interface AssetLibrary {
   insertRecord(asset: AssetItem): void;
   remove(id: string): void;
   restore(asset: AssetItem): void;
+  replace(data: unknown): void;
   subscribe(listener: () => void): () => void;
 }
 
@@ -86,6 +87,24 @@ function createAssetLibrary(): AssetLibrary {
       assets.push({ ...asset });
       emit();
     },
+    replace(data) {
+      assets.length = 0;
+      if (!isRecord(data) || !Array.isArray(data.assets)) {
+        emit();
+        return;
+      }
+      for (const value of data.assets) {
+        const asset = readAsset(value);
+        if (asset) assets.push(asset);
+      }
+      const highest = assets.reduce((max, asset) => {
+        const match = /^asset-(\d+)$/.exec(asset.id);
+        const next = match ? Number(match[1]) : 0;
+        return Math.max(max, next);
+      }, 0);
+      sequence = highest;
+      emit();
+    },
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -106,16 +125,64 @@ export function importAssets(ctx: EditorContext, files: readonly File[], folderI
   const added = files.filter((file) => file.name.trim() !== '').map((file) => library.insert(file, folderId));
   if (added.length === 0) return [];
   const label = added.length === 1 ? `Import ${added[0]?.name ?? 'asset'}` : `Import ${added.length} assets`;
+  const remember = (): void => ctx.project.markDirty();
+  remember();
   ctx.undo.push({
     label,
     undo() {
       for (const asset of added) library.remove(asset.id);
+      remember();
     },
     redo() {
       for (const asset of added) library.restore(asset);
+      remember();
     },
   });
+  for (const asset of added) {
+    persistFileUrl(ctx, library, asset.id, files.find((file) => file.name === asset.name));
+  }
   return added;
+}
+
+export function exportLibrary(ctx: EditorContext): { folders: AssetFolder[]; assets: AssetItem[] } {
+  const library = assetLibrary(ctx);
+  return { folders: [...library.folders()], assets: [...library.assets()] };
+}
+
+export function importLibrary(ctx: EditorContext, data: unknown): void {
+  assetLibrary(ctx).replace(data);
+}
+
+function persistFileUrl(ctx: EditorContext, library: AssetLibrary, id: string, file: File | undefined): void {
+  if (!file || typeof FileReader === 'undefined') return;
+  const reader = new FileReader();
+  reader.addEventListener('load', () => {
+    if (typeof reader.result !== 'string') return;
+    const current = library.assets().find((asset) => asset.id === id);
+    if (!current) return;
+    library.remove(id);
+    library.restore({ ...current, url: reader.result });
+    ctx.project.markDirty();
+  });
+  reader.readAsDataURL(file);
+}
+
+function readAsset(value: unknown): AssetItem | null {
+  if (!isRecord(value)) return null;
+  if (typeof value.id !== 'string' || typeof value.name !== 'string' || typeof value.folderId !== 'string') return null;
+  const kind = value.kind;
+  if (kind !== 'texture' && kind !== 'mesh' && kind !== 'audio' && kind !== 'file') return null;
+  return {
+    id: value.id,
+    name: value.name,
+    folderId: value.folderId,
+    kind,
+    url: typeof value.url === 'string' ? value.url : null,
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 export function folderDescendants(folders: readonly AssetFolder[], rootId: string): Set<string> {

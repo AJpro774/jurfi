@@ -1,7 +1,8 @@
 import type { EditorContext } from '../context';
 import type { EntityRecord } from '../world';
-import { moveEntity, renameEntity, setFlag, type Placement } from './edits';
-import { readFlags } from './flags';
+import { createEntity, deleteEntities, duplicateEntity, moveEntity, renameEntity, setFlag, type Placement } from './edits';
+import { siblingRecords, watchWorld } from './ecs';
+import { flagBook, readFlags } from './flags';
 import { chevronIcon, eyeIcon, lockIcon } from './icons';
 
 interface Row {
@@ -9,20 +10,19 @@ interface Row {
   depth: number;
 }
 
-function childrenOf(entities: readonly EntityRecord[]): Map<string | null, EntityRecord[]> {
-  const ids = new Set(entities.map((entity) => entity.id));
-  const children = new Map<string | null, EntityRecord[]>();
-  for (const entity of entities) {
-    const parent = entity.parentId !== null && ids.has(entity.parentId) ? entity.parentId : null;
-    const list = children.get(parent) ?? [];
-    list.push(entity);
-    children.set(parent, list);
-  }
-  return children;
+function childMap(ctx: EditorContext): Map<string | null, EntityRecord[]> {
+  const map = new Map<string | null, EntityRecord[]>();
+  const visit = (parentId: string | null): void => {
+    const kids = siblingRecords(ctx, parentId);
+    map.set(parentId, kids);
+    for (const kid of kids) visit(kid.id);
+  };
+  visit(null);
+  return map;
 }
 
-function flatten(entities: readonly EntityRecord[]): Row[] {
-  const children = childrenOf(entities);
+function flatten(ctx: EditorContext): Row[] {
+  const children = childMap(ctx);
   const rows: Row[] = [];
   const visit = (parent: string | null, depth: number): void => {
     for (const entity of children.get(parent) ?? []) {
@@ -34,7 +34,8 @@ function flatten(entities: readonly EntityRecord[]): Row[] {
   return rows;
 }
 
-function includedIds(entities: readonly EntityRecord[], query: string): Set<string> | null {
+function includedIds(ctx: EditorContext, query: string): Set<string> | null {
+  const entities = ctx.world.entities();
   const trimmed = query.trim().toLowerCase();
   if (trimmed === '') return null;
   const byId = new Map(entities.map((entity) => [entity.id, entity]));
@@ -47,7 +48,7 @@ function includedIds(entities: readonly EntityRecord[], query: string): Set<stri
       cursor = byId.get(cursor)?.parentId ?? null;
     }
   }
-  const children = childrenOf(entities);
+  const children = childMap(ctx);
   const seen = new Set<string>();
   const walk = (id: string): void => {
     if (seen.has(id)) return;
@@ -75,24 +76,27 @@ export function mountHierarchy(el: HTMLElement, ctx: EditorContext): () => void 
   let rendering = false;
   const collapsed = new Set<string>();
 
-  const offWorld = ctx.world.subscribe(() => render());
+  let menu: HTMLElement | null = null;
+  const offWorld = watchWorld(ctx, () => render());
   const offSelection = ctx.selection.subscribe(() => render());
+  const offFlags = flagBook(ctx).subscribe(() => render());
 
   render();
 
   return () => {
+    closeMenu();
     offWorld();
     offSelection();
+    offFlags();
     panel.remove();
   };
 
   function rows(): Row[] {
-    const entities = ctx.world.entities();
-    const include = includedIds(entities, query);
+    const include = includedIds(ctx, query);
     const filtering = include !== null;
     const visible: Row[] = [];
     const hidden = new Set<string>();
-    for (const row of flatten(entities)) {
+    for (const row of flatten(ctx)) {
       if (row.entity.parentId !== null && hidden.has(row.entity.parentId)) {
         hidden.add(row.entity.id);
         continue;
@@ -143,8 +147,8 @@ export function mountHierarchy(el: HTMLElement, ctx: EditorContext): () => void 
       empty.textContent = query.trim() === '' ? 'No entities' : 'No matches';
       tree.append(empty);
     }
-    const childMap = childrenOf(ctx.world.entities());
-    for (const row of list) tree.append(renderRow(row, (childMap.get(row.entity.id) ?? []).length > 0, includeActive(query)));
+    const children = childMap(ctx);
+    for (const row of list) tree.append(renderRow(row, (children.get(row.entity.id) ?? []).length > 0, includeActive(query)));
     tree.addEventListener('keydown', onTreeKey);
 
     panel.append(toolbar, tree);
@@ -163,7 +167,7 @@ export function mountHierarchy(el: HTMLElement, ctx: EditorContext): () => void 
 
   function renderRow(row: Row, expandable: boolean, filtering: boolean): HTMLElement {
     const { entity, depth } = row;
-    const flags = readFlags(entity.components);
+    const flags = readFlags(ctx, entity.id);
     const selected = ctx.selection.get().includes(entity.id);
     const item = document.createElement('div');
     item.className = 'je-row jp-entity';
@@ -289,6 +293,11 @@ export function mountHierarchy(el: HTMLElement, ctx: EditorContext): () => void 
       window.addEventListener('pointermove', onMove);
       window.addEventListener('pointerup', onUp);
     });
+    item.addEventListener('contextmenu', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openMenu(entity.id, event.clientX, event.clientY);
+    });
     item.addEventListener('dblclick', (event) => {
       if ((event.target as HTMLElement | null)?.closest('button')) return;
       beginRename(entity.id);
@@ -360,9 +369,21 @@ export function mountHierarchy(el: HTMLElement, ctx: EditorContext): () => void 
       beginRename(current);
       return;
     }
+    if (event.key === 'Delete') {
+      event.preventDefault();
+      const selected = ctx.selection.get();
+      removeIds(selected.includes(current) ? selected : [current]);
+      return;
+    }
+    if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+      event.preventDefault();
+      const row = panel.querySelector<HTMLElement>(`[data-id="${escapeAttr(current)}"]`);
+      const rect = row?.getBoundingClientRect();
+      openMenu(current, rect ? rect.left + 8 : 8, rect ? rect.bottom : 8);
+      return;
+    }
     if (!event.altKey) return;
-    const entities = ctx.world.entities();
-    const siblings = entities.filter((item) => item.parentId === entity.parentId);
+    const siblings = siblingRecords(ctx, entity.parentId);
     const siblingIndex = siblings.findIndex((item) => item.id === current);
     if (event.key === 'ArrowDown') {
       event.preventDefault();
@@ -378,9 +399,9 @@ export function mountHierarchy(el: HTMLElement, ctx: EditorContext): () => void 
       if (previous) moveEntity(ctx, current, { parentId: previous.id, beforeId: null });
     } else if (event.key === 'ArrowLeft') {
       event.preventDefault();
-      const parent = entities.find((item) => item.id === entity.parentId);
+      const parent = ctx.world.get(entity.parentId ?? '');
       if (!parent) return;
-      const parentSiblings = entities.filter((item) => item.parentId === parent.parentId);
+      const parentSiblings = siblingRecords(ctx, parent.parentId);
       const parentIndex = parentSiblings.findIndex((item) => item.id === parent.id);
       const afterParent = parentSiblings[parentIndex + 1];
       moveEntity(ctx, current, { parentId: parent.parentId, beforeId: afterParent?.id ?? null });
@@ -416,7 +437,7 @@ export function mountHierarchy(el: HTMLElement, ctx: EditorContext): () => void 
 
   function beginRename(id: string): void {
     const entity = ctx.world.get(id);
-    if (!entity || readFlags(entity.components).locked) return;
+    if (!entity || readFlags(ctx, id).locked) return;
     renamingId = id;
     focusAfterRender = `rename:${id}`;
     render();
@@ -448,10 +469,97 @@ export function mountHierarchy(el: HTMLElement, ctx: EditorContext): () => void 
     for (const row of panel.querySelectorAll<HTMLElement>('[data-drop]')) delete row.dataset.drop;
   }
 
+  function openMenu(id: string, x: number, y: number): void {
+    closeMenu();
+    const entity = ctx.world.get(id);
+    if (!entity) return;
+    focusId = id;
+    const locked = readFlags(ctx, id).locked;
+    const overlay = document.createElement('div');
+    overlay.className = 'jp-menu';
+    overlay.setAttribute('role', 'menu');
+    overlay.setAttribute('aria-label', `${entity.name} actions`);
+    overlay.style.left = `${x}px`;
+    overlay.style.top = `${y}px`;
+    const actions: { label: string; disabled: boolean; run: () => void }[] = [
+      { label: 'Create Empty', disabled: entity.parentId !== null && readFlags(ctx, entity.parentId).locked, run: () => selectCreated(createEntity(ctx, entity.parentId)) },
+      { label: 'Create Child', disabled: locked, run: () => selectCreated(createEntity(ctx, id)) },
+      { label: 'Duplicate', disabled: locked, run: () => selectCreated(duplicateEntity(ctx, id)) },
+      { label: 'Delete', disabled: locked, run: () => removeIds([id]) },
+    ];
+    for (const action of actions) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'jp-menu-item';
+      button.setAttribute('role', 'menuitem');
+      button.textContent = action.label;
+      button.disabled = action.disabled;
+      button.addEventListener('click', () => {
+        closeMenu();
+        action.run();
+      });
+      overlay.append(button);
+    }
+    overlay.addEventListener('keydown', (event) => {
+      const items = [...overlay.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
+      const index = items.findIndex((item) => item === document.activeElement);
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeMenu();
+        focusAfterRender = `row:${id}`;
+        render();
+        return;
+      }
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        const step = event.key === 'ArrowDown' ? 1 : -1;
+        const next = items[(index + step + items.length) % items.length];
+        next?.focus();
+      }
+    });
+    el.append(overlay);
+    menu = overlay;
+    overlay.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')?.focus();
+    window.addEventListener('pointerdown', onMenuPointer, true);
+  }
+
+  function onMenuPointer(event: PointerEvent): void {
+    const target = event.target;
+    if (menu && target instanceof Node && menu.contains(target)) return;
+    closeMenu();
+  }
+
+  function closeMenu(): void {
+    window.removeEventListener('pointerdown', onMenuPointer, true);
+    menu?.remove();
+    menu = null;
+  }
+
+  function selectCreated(id: string | null): void {
+    if (!id) return;
+    focusId = id;
+    focusAfterRender = `row:${id}`;
+    ctx.selection.set([id]);
+  }
+
+  function removeIds(ids: readonly string[]): void {
+    const fallback = ids
+      .map((id) => ctx.world.get(id)?.parentId)
+      .find((parentId): parentId is string => typeof parentId === 'string' && !ids.includes(parentId)) ?? null;
+    if (!deleteEntities(ctx, ids)) return;
+    const remaining = ctx.selection.get().filter((id) => ctx.world.get(id) !== undefined && !ids.includes(id));
+    const next = remaining.length > 0 ? remaining : fallback ? [fallback] : [];
+    if (next[0]) {
+      focusId = next[0];
+      focusAfterRender = `row:${next[0]}`;
+    }
+    ctx.selection.set(next);
+  }
+
   function placementFor(source: string, target: EntityRecord, zone: 'before' | 'after' | 'inside'): Placement {
     if (zone === 'inside') return { parentId: target.id, beforeId: null };
     if (zone === 'before') return { parentId: target.parentId, beforeId: target.id };
-    const siblings = ctx.world.entities().filter((entity) => entity.parentId === target.parentId);
+    const siblings = siblingRecords(ctx, target.parentId);
     const index = siblings.findIndex((entity) => entity.id === target.id);
     const following = siblings[index + 1];
     return { parentId: target.parentId, beforeId: following && following.id !== source ? following.id : null };
