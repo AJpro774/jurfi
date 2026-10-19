@@ -202,13 +202,13 @@ This package does not register `hierarchy.flags` or `assets.library`. The Inspec
 
 | id | Owner | Contents |
 | --- | --- | --- |
-| `hierarchy.flags` | Inspector & Assets UI | Visibility and lock flags |
-| `assets.library` | Inspector & Assets UI | Asset library |
-| `nodegraph` | Node graph panel | Graph document (today still mirrored at `jurfi.editor.nodegraph`) |
-| `timeline` | Timeline panel | Timeline clips |
-| `camera` | Viewport | Camera state |
+| `hierarchy.flags` | Inspector & Assets UI | Visibility and lock flags. This package does not register it. |
+| `assets.library` | Inspector & Assets UI | Asset library. This package does not register it. |
+| `nodegraph` | `registerNodeGraphPanel()` | Graph document. A missing section still reads the legacy `jurfi.editor.nodegraph` key once. |
+| `timeline` | `registerTimelinePanel()` | `{ clip, time }` |
+| `camera` | `registerViewportPanel()` | Orbit camera, orthographic camera, and 2D/3D view |
 
-`hierarchy.flags` and `assets.library` stay unregistered until that owner calls `registerProjectSection`. The node graph, timeline, and camera sections use the same hook when those panels save into the project file.
+`hierarchy.flags` and `assets.library` stay unregistered until that owner calls `registerProjectSection`. The node graph, timeline, and viewport register their own sections. Autosave listens to `world.subscribe`, to `World.onChange` when the document is a core world (that is the world change stream; `onChanged` is per entity), and to `project:dirty`.
 
 ## Node graph
 
@@ -228,7 +228,7 @@ Graph document types come from `@jurfi/script`: `GraphDoc`, `NodeRegistry`, and 
 
 The view implements `DebugSource`. Play mode loads the graph with `createScriptRuntime`, calls `attachDebugger`, and paints `{ kind: 'wire', wireId, value }` and `{ kind: 'node', nodeId, phase: 'enter' | 'exit' }` through `onEvent`. `wireId` is the edge id when the edge has one, otherwise `fromNode:fromPin->toNode:toPin`. `setDebugSource` installs an extra listener for those same events, and `null` clears the overlay.
 
-Every committed edit is on the undo stack, and `getDocument()` is JSON. The panel writes that JSON to `localStorage` under `jurfi.editor.nodegraph` after each commit so a reload can restore it. Registering a `nodegraph` project section (see Project sections) is how that document joins the project file and `jurfi.editor.autosave`. A drag or a text field is not in the document until the gesture or the field commits.
+Every committed edit is on the undo stack, and `getDocument()` is JSON. The panel registers the `nodegraph` project section, so that document is part of the project file and `jurfi.editor.autosave`. A graph previously stored only under `jurfi.editor.nodegraph` is still read when the section is missing, then dropped once a project section loads. A drag or a text field is not in the document until the gesture or the field commits.
 
 ```bash
 pnpm --filter @jurfi/ui build

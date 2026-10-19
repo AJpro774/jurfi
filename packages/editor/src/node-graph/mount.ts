@@ -1,6 +1,7 @@
 import { createScriptRuntime, type DebugSource, type GraphDoc } from '@jurfi/script';
 import type { EditorContext } from '../context';
 import { PANEL } from '../layout';
+import { registerProjectSection } from '../project-sections';
 import { registerPanel } from '../registry';
 import { createUndoStack, type UndoStack } from '../undo';
 import { identityGraphAdapter, type GraphDocAdapter } from './adapter';
@@ -8,10 +9,13 @@ import { createGraphController, type GraphController } from './controller';
 import { createDemoGraph } from './demo-document';
 import type { NodeRegistry } from './registry';
 import { createDefaultRegistry } from './registry';
-import { deserializeGraph, serializeGraph } from './serialize';
+import { deserializeGraph } from './serialize';
 import { NodeGraphView } from './view';
 
-/** Last committed graph. Separate from the shell project file, which stores the world. */
+/**
+ * Legacy graph autosave. New sessions store the graph in the project file
+ * under the `nodegraph` section. This key is read once when that section is missing.
+ */
 export const GRAPH_AUTOSAVE_KEY = 'jurfi.editor.nodegraph';
 
 export interface NodeGraphOptions<TDoc = GraphDoc> {
@@ -81,6 +85,11 @@ interface GraphSession {
 }
 
 let session: GraphSession | null = null;
+let graphDocument: GraphDoc | null = null;
+
+function currentGraph(): GraphDoc {
+  return session?.controller.getDocument() ?? graphDocument ?? readGraphAutosave() ?? createDemoGraph();
+}
 
 function readGraphAutosave(): GraphDoc | null {
   try {
@@ -93,15 +102,6 @@ function readGraphAutosave(): GraphDoc | null {
   }
 }
 
-function writeGraphAutosave(doc: GraphDoc): void {
-  try {
-    if (typeof localStorage === 'undefined') return;
-    localStorage.setItem(GRAPH_AUTOSAVE_KEY, serializeGraph(doc));
-  } catch {
-    // Storage can be full or disabled. The in-memory document stays current.
-  }
-}
-
 /**
  * Replace the shell's Node Graph placeholder.
  * Call this before `createEditor` so the placeholder is never installed.
@@ -109,12 +109,29 @@ function writeGraphAutosave(doc: GraphDoc): void {
  */
 export function registerNodeGraphPanel(): () => void {
   const registry = createDefaultRegistry();
-  return registerPanel({
+  const unregisterSection = registerProjectSection('nodegraph', {
+    save: () => currentGraph(),
+    load(data) {
+      try {
+        const doc = deserializeGraph(data);
+        graphDocument = doc;
+        session?.controller.resetDocument(doc);
+        if (typeof localStorage !== 'undefined') localStorage.removeItem(GRAPH_AUTOSAVE_KEY);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : 'invalid graph';
+        console.warn(`Skipped project section "nodegraph": ${detail}`);
+      }
+    },
+  });
+  const unregisterPanel = registerPanel({
     id: PANEL.nodeGraph,
     title: 'Node Graph',
     mount(el, ctx) {
       const controller = controllerFor(ctx, registry);
-      const view = new NodeGraphView(el, controller, registry, writeGraphAutosave);
+      const view = new NodeGraphView(el, controller, registry, (doc) => {
+        graphDocument = doc;
+        ctx.project.markDirty();
+      });
       const debug = attachPlayDebug(ctx, view);
       return () => {
         debug();
@@ -122,11 +139,16 @@ export function registerNodeGraphPanel(): () => void {
       };
     },
   });
+  return () => {
+    unregisterSection();
+    unregisterPanel();
+  };
 }
 
 function controllerFor(ctx: EditorContext, registry: NodeRegistry): GraphController {
   if (session && session.undo === ctx.undo) return session.controller;
-  const document = session?.controller.getDocument() ?? readGraphAutosave() ?? createDemoGraph();
+  const document = currentGraph();
+  graphDocument = document;
   const controller = createGraphController({ document, registry, undo: ctx.undo });
   session = { undo: ctx.undo, controller, registry };
   return controller;

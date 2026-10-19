@@ -204,6 +204,8 @@ export function createEditor(options: CreateEditorOptions): Editor {
   cleanups.push(ctx.selection.subscribe(syncChrome));
   cleanups.push(ctx.undo.subscribe(syncChrome));
   cleanups.push(ctx.world.subscribe(() => scheduleAutosave()));
+  const ecs = (ctx.world as { ecs?: { onChange?: (listener: (change: { kind: string }) => void) => () => void } }).ecs;
+  if (typeof ecs?.onChange === 'function') cleanups.push(ecs.onChange(() => scheduleAutosave()));
   cleanups.push(ctx.bus.on('project:dirty', () => scheduleAutosave()));
   if (sectionWarnings.length > 0) {
     ctx.bus.emit('status', {
