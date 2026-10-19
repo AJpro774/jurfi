@@ -667,6 +667,22 @@ export class World {
   }
 
   /**
+   * Run `fn` without recording undo or redo.
+   * Nested calls stay suspended until the outermost one returns.
+   * Clip playback uses this so sampled writes do not fill the history stack.
+   */
+  withoutHistory<T>(fn: () => T): T {
+    this.assertOpen();
+    const previous = this.history.suspended;
+    this.history.suspended = true;
+    try {
+      return fn();
+    } finally {
+      this.history.suspended = previous;
+    }
+  }
+
+  /**
    * Group every edit inside `fn` into one undo step.
    * Nested transactions join the outer step. A throw rolls the open step back.
    */

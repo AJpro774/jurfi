@@ -1,7 +1,7 @@
 {
   "name": "@jurfi/anim",
   "version": "0.0.0",
-  "description": "Animation clip runtime: sample, play, and edit tracks. No editor or DOM dependencies.",
+  "description": "Animation clip runtime, ECS binding, and blend trees. No editor or DOM dependencies.",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,

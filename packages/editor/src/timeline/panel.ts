@@ -29,6 +29,7 @@ import { applyKeyMoves, type KeyMove } from './moves';
 import { buildRows, type TimelineRow, type ViewMode } from './rows';
 import { addRef, hasRef, toggleRef, uniqueKeyTimes, type KeyRef } from './selection';
 import { clampTime, niceStep, snapTime, snapValue } from './snap';
+import { applyTimelineClip } from './apply';
 import { isWholeQuat, readComponent, writeComponent } from './values';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -244,9 +245,18 @@ export function mountTimeline(host: HTMLElement, ctx: EditorContext, clip: Clip,
   let rulerH = 28;
   let raf = 0;
   let lastFrame = 0;
+  let playbackWarnings = '';
 
   const locked = (): Set<string> => new Set(readMeta(clip).locked);
   const muted = (): Set<string> => new Set(readMeta(clip).muted);
+
+  function applyPlayback(): void {
+    const warnings = applyTimelineClip(ctx.world, clip, player.time, muted());
+    const text = warnings.map((warning) => `${warning.trackId}: ${warning.message}`).join('; ');
+    if (text === playbackWarnings) return;
+    playbackWarnings = text;
+    if (text) console.warn(`Timeline clip: ${text}`);
+  }
 
   function measure(curve: boolean): number {
     probe.classList.toggle('is-curve', curve);
@@ -339,6 +349,7 @@ export function mountTimeline(host: HTMLElement, ctx: EditorContext, clip: Clip,
     playhead.style.top = `${rulerH}px`;
     playhead.style.height = `${Math.max(0, height - rulerH)}px`;
     syncChrome();
+    applyPlayback();
     drawFooter();
   }
 
@@ -964,7 +975,7 @@ export function mountTimeline(host: HTMLElement, ctx: EditorContext, clip: Clip,
     }, 'event-name');
   });
   addTrackBtn.addEventListener('click', () => {
-    const entity = clip.tracks.find((track) => track.id === activeTrackId)?.target.entity ?? clip.tracks[0]?.target.entity ?? 'hero';
+    const entity = clip.tracks.find((track) => track.id === activeTrackId)?.target.entity ?? clip.tracks[0]?.target.entity ?? 'player';
     let id = '';
     recordEdit(ctx.undo, 'Add track', clip, () => {
       id = insertNumberTrack(clip, entity);

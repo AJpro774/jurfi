@@ -23,3 +23,39 @@ export type { ClipEventListener, ClipPlayerOptions, SeekOptions, TimeListener } 
 
 export { addKey, addTrack, moveKey, removeKey, setInterp, sortKeys, stripEditorData, validateClip } from './edit';
 export type { TangentEdit } from './edit';
+
+export { applyClip } from './bind';
+export type { ApplyClipOptions, ApplyWarning } from './bind';
+
+export {
+  BLEND_TREE_VERSION,
+  POSE_DATA_TYPE,
+  createMachine,
+  evaluateBlendTree,
+  stepMachine,
+  validateBlendTree,
+} from './blend';
+export type {
+  AdditiveNode,
+  AnimState,
+  Blend1DChild,
+  Blend1DNode,
+  Blend2DChild,
+  Blend2DNode,
+  BlendNode,
+  BlendParam,
+  BlendTree,
+  ClipNode,
+  ConditionOp,
+  MachinePlayback,
+  MachineStep,
+  MaskNode,
+  ParamSet,
+  ParamType,
+  ParamValue,
+  Pose,
+  PoseJoint,
+  PoseSource,
+  Transition,
+  TransitionCondition,
+} from './blend';
