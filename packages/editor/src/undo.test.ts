@@ -100,16 +100,21 @@ describe('undo stack', () => {
 });
 
 describe('play mode', () => {
-  it('restores the world snapshot on stop and clears undo', () => {
+  it('restores the world snapshot on stop and keeps edits from before play', () => {
     const ctx = createEditorContext();
     ctx.selection.set(['player']);
-    ctx.play();
-    expect(ctx.getPlayState()).toBe('playing');
-    const before = ctx.world.get('player')?.name;
-    ctx.world.update('player', { name: 'Ghost' });
+    ctx.world.update('player', { name: 'Hero' });
     ctx.undo.push({
       label: 'Rename',
-      undo: () => ctx.world.update('player', { name: before ?? 'Player' }),
+      undo: () => ctx.world.update('player', { name: 'Player' }),
+      redo: () => ctx.world.update('player', { name: 'Hero' }),
+    });
+    ctx.play();
+    expect(ctx.getPlayState()).toBe('playing');
+    ctx.world.update('player', { name: 'Ghost' });
+    ctx.undo.push({
+      label: 'Play rename',
+      undo: () => ctx.world.update('player', { name: 'Hero' }),
       redo: () => ctx.world.update('player', { name: 'Ghost' }),
     });
     ctx.pause();
@@ -118,8 +123,10 @@ describe('play mode', () => {
     expect(ctx.getPlayState()).toBe('playing');
     ctx.stop();
     expect(ctx.getPlayState()).toBe('editing');
+    expect(ctx.world.get('player')?.name).toBe('Hero');
+    expect(ctx.undo.undoLabel()).toBe('Rename');
+    expect(ctx.undo.undo()).toBe(true);
     expect(ctx.world.get('player')?.name).toBe('Player');
-    expect(ctx.undo.canUndo()).toBe(false);
     expect(ctx.selection.get()).toEqual(['player']);
   });
 

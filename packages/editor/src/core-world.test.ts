@@ -1,5 +1,6 @@
 import { createEditorWorld } from '@jurfi/core';
 import { describe, expect, it } from 'vitest';
+import { renameEntity } from './content/edits';
 import { createEditorContext } from './context';
 import { createDefaultSnapshot, type EditorWorld } from './world';
 
@@ -32,5 +33,25 @@ describe('core editor world', () => {
     expect(ecs.getVariable(player ?? 0, 'score')).toBe(7);
     expect(editor.get('bullet')).toBeUndefined();
     expect(ecs.toScene().generations).toEqual(beforeStop);
+  });
+
+  it('undoes a world edit through the core transaction log and keeps that step after stop', () => {
+    const world = createEditorWorld();
+    const editor: EditorWorld = world;
+    editor.deserialize(createDefaultSnapshot());
+    const ctx = createEditorContext({ world: editor });
+    expect(renameEntity(ctx, 'player', 'Hero')).toBe(true);
+    expect(ctx.undo.undoLabel()).toBe('Rename');
+    expect(ctx.undo.undo()).toBe(true);
+    expect(editor.get('player')?.name).toBe('Player');
+    expect(ctx.undo.redo()).toBe(true);
+    expect(editor.get('player')?.name).toBe('Hero');
+    ctx.play();
+    editor.update('player', { name: 'Ghost' });
+    ctx.stop();
+    expect(editor.get('player')?.name).toBe('Hero');
+    expect(ctx.undo.canUndo()).toBe(true);
+    expect(ctx.undo.undo()).toBe(true);
+    expect(editor.get('player')?.name).toBe('Player');
   });
 });

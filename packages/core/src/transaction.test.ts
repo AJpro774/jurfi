@@ -249,4 +249,26 @@ describe('transactions', () => {
     expect(world.getField(entity, Transform, 'position.x')).toBe(9);
     expect(world.getField(entity, Transform, 'scale.y')).toBe(5);
   });
+
+  it('keeps history across a preserving load and nests suspend', () => {
+    const world = createWorld();
+    const entity = world.create();
+    world.setName(entity, 'Kept');
+    const saved = scene(world);
+    world.suspendHistory();
+    world.setName(entity, 'Hidden');
+    world.suspendHistory();
+    world.resumeHistory();
+    expect(world.isHistorySuspended()).toBe(true);
+    world.resumeHistory();
+    expect(world.getName(entity)).toBe('Hidden');
+    expect(world.canUndo()).toBe(true);
+    world.loadScene(saved, { preserveHistory: true });
+    expect(world.getName(entity)).toBe('Kept');
+    expect(world.canUndo()).toBe(true);
+    expect(world.undo()).toBe(true);
+    expect(world.getName(entity)).toBe('');
+    world.clearRedo();
+    expect(world.canRedo()).toBe(false);
+  });
 });

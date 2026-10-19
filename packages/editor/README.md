@@ -118,6 +118,8 @@ Consecutive `push` calls that share a `mergeKey` become one history step. Undo o
 
 `undo()` and `redo()` return `false` at the ends of the stack. A new `push` clears the redo stack. `subscribe` receives `'push' | 'undo' | 'redo' | 'clear'` after the world change for undo and redo. The stack caps at 200 entries.
 
+When `world.ecs` is present, `createEditorContext` mirrors the core change log. `add`, `update`, and `remove` on that world are one ECS transaction each. Hierarchy and inspector edits call `transaction(label, …)` and do not also push a command, so Ctrl/Cmd+Z runs `ecs.undo()` / `ecs.redo()`. Graph, timeline, and asset commands stay on the same stack and interleave with those transactions. `mergeKey` still applies to commands. An ECS transaction is one step; core does not coalesce keystrokes. `stop()` does not clear this stack. It drops only entries pushed after play began. Play suspends history, so play-mode world writes are not undo steps. `deserialize(snapshot, { preserveHistory: true })` is how stop restores the scene without wiping the core log. A normal scene load still clears it.
+
 Keyboard: Ctrl/Cmd+Z undoes, Ctrl/Cmd+Shift+Z and Ctrl/Cmd+Y redo (wired by the shell).
 
 ### Commands
@@ -159,7 +161,7 @@ Other string event names are allowed; their payload is `unknown` unless you agre
 
 ### Play mode
 
-`play()` stores `world.serialize()` the first time the session leaves editing, then sets the state to `playing`. `pause()` only applies while playing. `play()` from paused resumes and keeps the original snapshot. `stop()` deserializes that snapshot, clears the undo stack, and returns to `editing`. When the world is the `@jurfi/core` adapter, that snapshot includes packed entity ids, per-entity variables, and the generation table, so `stop()` restores the same numeric ids and variables that were current when play began. `step()` snapshots if needed, forces `paused`, and emits `play:step`. Nothing in the shell ticks a game loop; the snapshot boundary is the scaffold a runtime can hook.
+`play()` stores `world.serialize()` the first time the session leaves editing, suspends core history, then sets the state to `playing`. `pause()` only applies while playing and leaves history suspended. `play()` from paused resumes and keeps the original snapshot. `stop()` deserializes that snapshot with history preserved, drops undo entries that were pushed during the session, and returns to `editing`. Edits made before play stay on the stack. When the world is the `@jurfi/core` adapter, that snapshot includes packed entity ids, per-entity variables, and the generation table, so `stop()` restores the same numeric ids and variables that were current when play began. `step()` snapshots if needed, forces `paused`, and emits `play:step`. Nothing in the shell ticks a game loop; the snapshot boundary is the scaffold a runtime can hook.
 
 ## Shell
 

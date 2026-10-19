@@ -22,6 +22,7 @@ import {
 } from 'three';
 import type { Material } from 'three';
 import type { EditorContext } from '../context';
+import { ecsHistory } from '../ecs-history';
 import { dot, IDENTITY_QUAT, length, sub, transformsClose } from '../math/vec';
 import type { Quat, Transform, Vec3 } from '../math/vec';
 import type { EntityRecord } from '../world';
@@ -188,6 +189,21 @@ export function mountScene(options: SceneOptions): SceneHandle {
   const views = new Map<string, EntityView>();
   let drag: Drag | null = null;
   let dragAbsent = new Set<string>();
+  let historyHeld = false;
+
+  function holdHistory(): void {
+    const ecs = ecsHistory(ctx.world);
+    if (!ecs || historyHeld) return;
+    ecs.suspendHistory();
+    historyHeld = true;
+  }
+
+  function releaseHistory(): void {
+    const ecs = ecsHistory(ctx.world);
+    if (!ecs || !historyHeld) return;
+    ecs.resumeHistory();
+    historyHeld = false;
+  }
   let playing = ctx.getPlayState() !== 'editing';
   let idBuffer: IdBufferPicker | null = null;
   let renderer: Awaited<ReturnType<typeof createRenderer>> | null = null;
@@ -445,25 +461,30 @@ export function mountScene(options: SceneOptions): SceneHandle {
     const ray = pointerRay();
     const before = snapshot();
     if (before.size === 0) return false;
+    holdHistory();
+    const miss = (): false => {
+      releaseHistory();
+      return false;
+    };
     if (isAxis(handle) && settings.gizmo === 'translate') {
       const dir = axisInSpace(handle, rotation, settings.space);
       const normal = bestAxisPlaneNormal(dir, cameraForward());
       const hit = rayPlane(ray.origin, ray.dir, pivot, normal);
-      if (!hit) return false;
+      if (!hit) return miss();
       drag = { kind: 'translate', pointerId: event.pointerId, dir, normal, pivot, startHit: hit, before };
       return true;
     }
     if (isPlane(handle) && settings.gizmo === 'translate') {
       const normal = planeNormal(handle, rotation, settings.space);
       const hit = rayPlane(ray.origin, ray.dir, pivot, normal);
-      if (!hit) return false;
+      if (!hit) return miss();
       drag = { kind: 'translate-plane', pointerId: event.pointerId, plane: handle, normal, pivot, startHit: hit, before };
       return true;
     }
     if (isAxis(handle) && settings.gizmo === 'rotate') {
       const dir = axisInSpace(handle, rotation, settings.space);
       const hit = rayPlane(ray.origin, ray.dir, pivot, dir);
-      if (!hit) return false;
+      if (!hit) return miss();
       drag = {
         kind: 'rotate',
         pointerId: event.pointerId,
@@ -481,13 +502,13 @@ export function mountScene(options: SceneOptions): SceneHandle {
       const dir = axis === 'uniform' ? cameraForward() : axisInSpace(axis, rotation, settings.space);
       const normal = axis === 'uniform' ? dir : bestAxisPlaneNormal(dir, cameraForward());
       const hit = rayPlane(ray.origin, ray.dir, pivot, normal);
-      if (!hit) return false;
+      if (!hit) return miss();
       const offset = sub(hit, pivot);
       const startDist = axis === 'uniform' ? length(offset) : dot(offset, dir);
       drag = { kind: 'scale', pointerId: event.pointerId, axis, dir, normal, pivot, startDist, space: settings.space, before };
       return true;
     }
-    return false;
+    return miss();
   }
 
   function applyDrag(id: string, start: Transform, next: Transform): void {
@@ -540,6 +561,7 @@ export function mountScene(options: SceneOptions): SceneHandle {
   function commitDrag(): void {
     if (!drag || drag.kind === 'orbit' || drag.kind === 'pan') {
       drag = null;
+      releaseHistory();
       return;
     }
     const after = new Map<string, Transform>();
@@ -551,7 +573,22 @@ export function mountScene(options: SceneOptions): SceneHandle {
     const command = transformUndo(ctx.world, drag.before, after, label, dragAbsent);
     dragAbsent = new Set();
     drag = null;
-    if (command) ctx.undo.push(command);
+    const held = historyHeld;
+    releaseHistory();
+    const ecs = ecsHistory(ctx.world);
+    if (held && ecs && command && !ecs.isHistorySuspended()) {
+      ecs.suspendHistory();
+      try {
+        command.undo();
+      } finally {
+        ecs.resumeHistory();
+      }
+      ecs.transaction(label, () => {
+        command.redo();
+      });
+      return;
+    }
+    if (command && !(held && ecs?.isHistorySuspended())) ctx.undo.push(command);
   }
 
   function revertDrag(): void {
@@ -560,6 +597,7 @@ export function mountScene(options: SceneOptions): SceneHandle {
     }
     drag = null;
     dragAbsent = new Set();
+    releaseHistory();
   }
 
   function onPointerDown(event: PointerEvent): void {

@@ -18,7 +18,8 @@ export interface EditorWorld {
   update(id: string, patch: Partial<Omit<EntityRecord, 'id'>>): void;
   remove(id: string): void;
   serialize(): WorldSnapshot;
-  deserialize(snapshot: WorldSnapshot): void;
+  /** `preserveHistory` keeps the undo stack. Core scene loads use it when play stops. */
+  deserialize(snapshot: WorldSnapshot, options?: { preserveHistory?: boolean }): void;
   subscribe(listener: () => void): () => void;
 }
 

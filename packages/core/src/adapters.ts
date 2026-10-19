@@ -40,7 +40,7 @@ export interface EditorWorldView {
   update(id: string, patch: Partial<Omit<EditorEntityRecord, 'id'>>): void;
   remove(id: string): void;
   serialize(): EditorSnapshot;
-  deserialize(snapshot: EditorSnapshot): void;
+  deserialize(snapshot: EditorSnapshot, options?: { preserveHistory?: boolean }): void;
   subscribe(listener: () => void): () => void;
 }
 
@@ -139,7 +139,7 @@ export function createEditorWorld(world: World = createWorld()): EditorWorldView
         throw new Error('Entity id must be a non-empty string');
       }
       if (requireEntity(entity.id)) throw new Error(`Entity "${entity.id}" already exists`);
-      world.batch(() => {
+      world.transaction('Add entity', () => {
         const created = world.create();
         world.setAlias(created, entity.id);
         world.setName(created, entity.name);
@@ -151,7 +151,7 @@ export function createEditorWorld(world: World = createWorld()): EditorWorldView
     update(id, patch) {
       const entity = requireEntity(id);
       if (!entity) return;
-      world.batch(() => {
+      world.transaction('Update entity', () => {
         if (patch.name !== undefined) world.setName(entity, patch.name);
         if (patch.parentId !== undefined) applyParent(entity, patch.parentId);
         if (patch.components !== undefined) replaceComponents(world, entity, patch.components);
@@ -164,12 +164,14 @@ export function createEditorWorld(world: World = createWorld()): EditorWorldView
       const entity = requireEntity(id);
       if (!entity) return;
       unresolved.delete(entityIndex(entity));
-      world.destroy(entity);
+      world.transaction('Remove entity', () => {
+        world.destroy(entity);
+      });
     },
     serialize() {
       return { entities: world.entities().map(recordOf), generations: world.toScene().generations };
     },
-    deserialize(snapshot) {
+    deserialize(snapshot, options) {
       if (!isEditorSnapshot(snapshot)) throw new Error('Invalid world snapshot');
       const seen = new Set<string>();
       for (const row of snapshot.entities) {
@@ -177,7 +179,7 @@ export function createEditorWorld(world: World = createWorld()): EditorWorldView
         seen.add(row.id);
       }
       const stable = snapshot.generations !== undefined && snapshot.entities.every((row) => typeof row.eid === 'number');
-      world.batch(() => {
+      const replace = (): void => {
         unresolved.clear();
         if (stable && snapshot.generations) {
           world.loadScene({
@@ -190,7 +192,7 @@ export function createEditorWorld(world: World = createWorld()): EditorWorldView
               components: row.components,
               variables: row.variables ?? {},
             })),
-          });
+          }, { preserveHistory: options?.preserveHistory });
           for (const row of snapshot.entities) {
             if (row.eid !== undefined) world.setAlias(row.eid, row.id);
           }
@@ -215,7 +217,17 @@ export function createEditorWorld(world: World = createWorld()): EditorWorldView
           const entity = created[index];
           if (entity) applyParent(entity, row.parentId);
         });
-      });
+      };
+      if (options?.preserveHistory) {
+        world.suspendHistory();
+        try {
+          replace();
+        } finally {
+          world.resumeHistory();
+        }
+        return;
+      }
+      world.batch(replace);
     },
     subscribe(listener) {
       listeners.add(listener);
