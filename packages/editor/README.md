@@ -153,13 +153,16 @@ interface EditorCommand {
 | `project:saved` | `{ name: string }` |
 | `project:loaded` | `{ name: string }` |
 | `status` | `{ message: string; level: 'info' \| 'warn' \| 'error' }` |
+| `log` | `{ level: 'info' \| 'warn' \| 'error'; message: string; source?: string }` |
 | `command:executed` | `{ id: string }` |
 
 Other string event names are allowed; their payload is `unknown` unless you agree on a shape with the listener.
 
 ### Play mode
 
-`play()` stores `world.serialize()` the first time the session leaves editing, then sets the state to `playing`. `pause()` only applies while playing. `play()` from paused resumes and keeps the original snapshot. `stop()` deserializes that snapshot, clears the undo stack, and returns to `editing`. When the world is the `@jurfi/core` adapter, that snapshot includes packed entity ids, per-entity variables, and the generation table, so `stop()` restores the same numeric ids and variables that were current when play began. `step()` snapshots if needed, forces `paused`, and emits `play:step`. Nothing in the shell ticks a game loop; the snapshot boundary is the scaffold a runtime can hook.
+`play()` stores `world.serialize()` the first time the session leaves editing, then sets the state to `playing` and starts a frame loop. Each frame ticks the script runtime against `EditorContext.world` (the core `createScriptWorld` adapter when `world.ecs` exists), advances the timeline `ClipPlayer` and writes sampled tracks onto entity components, then separates overlapping `components.physics` boxes with `@jurfi/physics` `overlaps` and `clampPos`. `pause()` freezes that loop. `play()` from paused resumes it and keeps the original snapshot. `stop()` stops the runtime, deserializes the snapshot, clears the undo stack, and returns to `editing`. Script failures emit `log` and `status` at level `error` and do not rethrow. `step()` runs one tick and leaves the session paused.
+
+`@jurfi/physics` has no world, no bodies, and no `step(dt)`. The Physics owner needs a stepper before collisions can do more than push axis-aligned boxes apart. `ClipPlayer` samples tracks but does not write the ECS; the editor applies `TrackTarget` onto the entity component bag, and the sample clip targets `hero`, which the demo scene does not contain. Spawn, destroy, and queries need `world.ecs`. A headless `EditorWorld` only gets component get and set.
 
 ## Shell
 

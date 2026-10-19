@@ -1,5 +1,6 @@
 import type { Clip } from '@jurfi/anim';
 import { PANEL } from '../layout';
+import { setPlaybackClip } from '../playback';
 import { registerPanel } from '../registry';
 import { mountTimeline } from './panel';
 import { createSampleClip } from './sample-clip';
@@ -11,7 +12,8 @@ import { createSampleClip } from './sample-clip';
 export function registerTimelinePanel(source?: Clip): () => void {
   const clip = source ? structuredClone(source) : createSampleClip();
   let time = 0;
-  return registerPanel({
+  setPlaybackClip(() => clip);
+  const unregister = registerPanel({
     id: PANEL.timeline,
     title: 'Timeline',
     mount(el, ctx) {
@@ -22,4 +24,8 @@ export function registerTimelinePanel(source?: Clip): () => void {
       };
     },
   });
+  return () => {
+    setPlaybackClip(() => null);
+    unregister();
+  };
 }

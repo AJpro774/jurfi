@@ -1,5 +1,6 @@
 import { createScriptRuntime, type DebugSource, type GraphDoc } from '@jurfi/script';
 import type { EditorContext } from '../context';
+import { setPlaybackGraph } from '../playback';
 import { PANEL } from '../layout';
 import { registerPanel } from '../registry';
 import { createUndoStack, type UndoStack } from '../undo';
@@ -109,6 +110,7 @@ function writeGraphAutosave(doc: GraphDoc): void {
  */
 export function registerNodeGraphPanel(): () => void {
   const registry = createDefaultRegistry();
+  setPlaybackGraph(() => session?.controller.getDocument() ?? readGraphAutosave() ?? createDemoGraph());
   return registerPanel({
     id: PANEL.nodeGraph,
     title: 'Node Graph',
