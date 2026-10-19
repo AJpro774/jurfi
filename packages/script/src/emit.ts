@@ -1,4 +1,5 @@
 import type { CompiledNode, CompiledProgram, ExecLink } from './ir';
+import { componentNames } from './world';
 
 /**
  * Plain JavaScript for a compiled graph.
@@ -214,6 +215,38 @@ class Emitter {
         ];
       case 'core/SetVariable':
         return [...this.writeVariable(scope, node), ...this.calls(scope, node.execOut.then)];
+      case 'core/SpawnEntity':
+        return [
+          `host.rememberSpawn(${js(scope)}, ${js(node.id)}, host.spawn());`,
+          ...this.calls(scope, node.execOut.then),
+        ];
+      case 'core/DestroyEntity':
+        return [
+          `host.destroy(host.entity(${this.expr(scope, node, 'entity')}));`,
+          ...this.calls(scope, node.execOut.then),
+        ];
+      case 'core/AddComponent':
+        return [
+          `host.addComponent(host.entity(${this.expr(scope, node, 'entity')}), ${js(prop(node, 'component'))}, ${node.dataIn.value ? this.expr(scope, node, 'value') : 'undefined'});`,
+          ...this.calls(scope, node.execOut.then),
+        ];
+      case 'core/RemoveComponent':
+        return [
+          `host.removeComponent(host.entity(${this.expr(scope, node, 'entity')}), ${js(prop(node, 'component'))});`,
+          ...this.calls(scope, node.execOut.then),
+        ];
+      case 'core/ForEach':
+        return [
+          `const items = host.eachItems(${this.expr(scope, node, 'entities')});`,
+          'for (let index = 0; index < items.length; index += 1) {',
+          '  if (host.halted) return;',
+          `  if (!host.step(${js(node.id)})) return;`,
+          `  const item = items[index];`,
+          '  if (item) host.rememberEach(' + js(scope) + ', ' + js(node.id) + ', item);',
+          ...indent(this.calls(scope, node.execOut.body), 2),
+          '}',
+          ...this.calls(scope, node.execOut.completed),
+        ];
       case 'core/SetComponent':
         return [
           `const component = ${js(prop(node, 'component'))};`,
@@ -251,6 +284,8 @@ class Emitter {
       case 'core/Self':
       case 'core/GetComponent':
       case 'core/GetField':
+      case 'core/HasComponent':
+      case 'core/Query':
         return [];
       default:
         return this.customExec(scope, node);
@@ -361,6 +396,26 @@ class Emitter {
         return this.compare(scope, node, opFor(node.typeId));
       case 'core/Self':
         return ['if (pin === "entity") return host.world.self;', 'return undefined;'];
+      case 'core/SpawnEntity':
+        return [
+          `if (pin === "entity") return host.spawned(${js(scope)}, ${js(node.id)});`,
+          'return undefined;',
+        ];
+      case 'core/HasComponent':
+        return [
+          'if (pin !== "result") return undefined;',
+          `return host.hasComponent(host.entity(${this.expr(scope, node, 'entity')}), ${js(prop(node, 'component'))});`,
+        ];
+      case 'core/Query':
+        return [
+          'if (pin !== "entities") return undefined;',
+          `return host.query(${this.queryArg(scope, node)});`,
+        ];
+      case 'core/ForEach':
+        return [
+          `if (pin === "entity") return host.eachEntity(${js(scope)}, ${js(node.id)});`,
+          'return undefined;',
+        ];
       case 'core/GetComponent':
         return [
           'if (pin !== "value") return undefined;',
@@ -379,6 +434,11 @@ class Emitter {
       default:
         return this.customValue(scope, node);
     }
+  }
+
+  private queryArg(scope: string, node: CompiledNode): string {
+    if (node.dataIn.components) return `host.componentNames(${this.expr(scope, node, 'components')})`;
+    return js(componentNames(node.props.components));
   }
 
   private readVariable(scope: string, node: CompiledNode): string[] {

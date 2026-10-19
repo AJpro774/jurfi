@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "generations": [1],
+  "entities": [
+    { "id": 1048576, "label": "FromLabel", "parent": null, "components": {} }
+  ]
+}

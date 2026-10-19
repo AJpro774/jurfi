@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "generations": [1],
+  "componentVersions": { "MigGap": 1 },
+  "entities": [
+    {
+      "id": 1048576,
+      "name": "Gap",
+      "parent": null,
+      "components": { "MigGap": { "hp": 1 } },
+      "variables": {}
+    }
+  ]
+}

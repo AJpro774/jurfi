@@ -3,7 +3,18 @@ import type { CompiledNode } from './ir';
 import type { VariableScope } from './schema';
 import { callDefinedRun, callDefinedValue, hasDefinedScript, type ScriptCall } from './scripts';
 import { propString, valuesEqual } from './util';
-import type { EntityRef, ScriptWorld } from './world';
+import {
+  addEntityComponent,
+  componentNames,
+  destroyEntity,
+  entityHasComponent,
+  entityList,
+  queryEntities,
+  removeEntityComponent,
+  spawnEntity,
+  type EntityRef,
+  type ScriptWorld,
+} from './world';
 
 /** Host surface the built-in nodes call. The runtime implements this; handlers never see the editor. */
 export interface ExecHost {
@@ -25,6 +36,11 @@ export interface ExecHost {
   enterSubgraph(graphId: string): void;
   getField(entity: EntityRef, component: string, field: string): unknown;
   setField(entity: EntityRef, component: string, field: string, value: unknown): void;
+  rememberSpawn(nodeId: string, entity: EntityRef): void;
+  spawnedEntity(nodeId: string): EntityRef | undefined;
+  rememberEach(nodeId: string, entity: EntityRef): void;
+  eachEntity(nodeId: string): EntityRef | undefined;
+  scheduleEach(node: CompiledNode, items: readonly EntityRef[]): void;
 }
 
 export interface NodeHandler {
@@ -231,6 +247,62 @@ const nodeHandlers: Record<string, NodeHandler> = {
         );
       }
       host.follow(node, 'then');
+    },
+  },
+  'core/SpawnEntity': {
+    exec(host, node) {
+      host.rememberSpawn(node.id, spawnEntity(host.world));
+      host.follow(node, 'then');
+    },
+    value(host, node, pin) {
+      return pin === 'entity' ? host.spawnedEntity(node.id) : undefined;
+    },
+  },
+  'core/DestroyEntity': {
+    exec(host, node) {
+      destroyEntity(host.world, host.entity(host.read(node, 'entity')));
+      host.follow(node, 'then');
+    },
+  },
+  'core/AddComponent': {
+    exec(host, node) {
+      const component = propString(node.props, 'component');
+      if (component) {
+        const value = node.dataIn.value ? host.read(node, 'value') : undefined;
+        addEntityComponent(host.world, host.entity(host.read(node, 'entity')), component, value);
+      }
+      host.follow(node, 'then');
+    },
+  },
+  'core/RemoveComponent': {
+    exec(host, node) {
+      const component = propString(node.props, 'component');
+      if (component) removeEntityComponent(host.world, host.entity(host.read(node, 'entity')), component);
+      host.follow(node, 'then');
+    },
+  },
+  'core/HasComponent': {
+    value(host, node, pin) {
+      if (pin !== 'result') return undefined;
+      const component = propString(node.props, 'component');
+      if (!component) return false;
+      return entityHasComponent(host.world, host.entity(host.read(node, 'entity')), component);
+    },
+  },
+  'core/Query': {
+    value(host, node, pin) {
+      if (pin !== 'entities') return undefined;
+      const fromPin = node.dataIn.components ? host.read(node, 'components') : undefined;
+      const names = fromPin !== undefined ? componentNames(fromPin) : componentNames(node.props.components);
+      return queryEntities(host.world, names);
+    },
+  },
+  'core/ForEach': {
+    exec(host, node) {
+      host.scheduleEach(node, entityList(host.read(node, 'entities')));
+    },
+    value(host, node, pin) {
+      return pin === 'entity' ? host.eachEntity(node.id) : undefined;
     },
   },
   'core/Subgraph': {

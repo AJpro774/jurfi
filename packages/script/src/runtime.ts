@@ -118,7 +118,16 @@ interface WhileFrame {
   nodeId: string;
 }
 
-type Frame = NodeFrame | ForFrame | WhileFrame;
+interface EachFrame {
+  kind: 'each';
+  program: CompiledProgram;
+  scope: string;
+  nodeId: string;
+  items: readonly EntityRef[];
+  index: number;
+}
+
+type Frame = NodeFrame | ForFrame | WhileFrame | EachFrame;
 
 interface Delay {
   remaining: number;
@@ -150,6 +159,8 @@ class Engine implements ExecHost, ScriptRuntime {
   private readonly graphVars = new Map<string, Map<string, unknown>>();
   private readonly entityVars = new Map<string, Map<string, unknown>>();
   private readonly loopValues = new Map<string, number>();
+  private readonly spawnValues = new Map<string, EntityRef>();
+  private readonly eachValues = new Map<string, EntityRef>();
   private readonly payloads = new Map<string, unknown>();
   private readonly reading = new Set<string>();
   private readonly breakpoints = new Set<string>();
@@ -200,6 +211,8 @@ class Engine implements ExecHost, ScriptRuntime {
     this.stepBudget = 0;
     this.resumeSkip = undefined;
     this.loopValues.clear();
+    this.spawnValues.clear();
+    this.eachValues.clear();
     this.payloads.clear();
     this.reading.clear();
     this.aborted = false;
@@ -222,6 +235,8 @@ class Engine implements ExecHost, ScriptRuntime {
     this.graphVars.clear();
     this.entityVars.clear();
     this.loopValues.clear();
+    this.spawnValues.clear();
+    this.eachValues.clear();
     this.payloads.clear();
     this.reading.clear();
     this.faults.length = 0;
@@ -264,6 +279,8 @@ class Engine implements ExecHost, ScriptRuntime {
     this.graphVars.clear();
     this.entityVars.clear();
     this.loopValues.clear();
+    this.spawnValues.clear();
+    this.eachValues.clear();
     this.payloads.clear();
     this.faults.length = 0;
   }
@@ -425,6 +442,34 @@ class Engine implements ExecHost, ScriptRuntime {
     return this.loopValues.get(`${this.scope}\0${nodeId}`) ?? 0;
   }
 
+  rememberSpawn(nodeId: string, entity: EntityRef): void {
+    this.spawnValues.set(`${this.scope}\0${nodeId}`, entity);
+  }
+
+  spawnedEntity(nodeId: string): EntityRef | undefined {
+    return this.spawnValues.get(`${this.scope}\0${nodeId}`);
+  }
+
+  rememberEach(nodeId: string, entity: EntityRef): void {
+    this.eachValues.set(`${this.scope}\0${nodeId}`, entity);
+  }
+
+  eachEntity(nodeId: string): EntityRef | undefined {
+    return this.eachValues.get(`${this.scope}\0${nodeId}`);
+  }
+
+  scheduleEach(node: CompiledNode, items: readonly EntityRef[]): void {
+    if (this.aborted) return;
+    this.stack.push({
+      kind: 'each',
+      program: this.live(),
+      scope: this.scope,
+      nodeId: node.id,
+      items: [...items],
+      index: 0,
+    });
+  }
+
   scheduleFor(node: CompiledNode, first: number, last: number): void {
     if (this.aborted) return;
     this.stack.push({
@@ -525,6 +570,8 @@ class Engine implements ExecHost, ScriptRuntime {
     this.graphVars.clear();
     this.entityVars.clear();
     this.loopValues.clear();
+    this.spawnValues.clear();
+    this.eachValues.clear();
     this.payloads.clear();
     this.program = null;
   }
@@ -711,6 +758,10 @@ class Engine implements ExecHost, ScriptRuntime {
         this.stepWhile(frame);
         return;
       }
+      if (frame.kind === 'each') {
+        this.stepEach(frame);
+        return;
+      }
       const node = frame.program.nodes[frame.nodeId];
       if (!node) return;
       const handler = getNodeHandler(node.typeId);
@@ -726,6 +777,19 @@ class Engine implements ExecHost, ScriptRuntime {
     if (!node) return;
     if (frame.index <= frame.last) {
       this.loopValues.set(`${frame.scope}\0${frame.nodeId}`, frame.index);
+      this.stack.push({ ...frame, index: frame.index + 1 });
+      this.follow(node, 'body');
+    } else {
+      this.follow(node, 'completed');
+    }
+  }
+
+  private stepEach(frame: EachFrame): void {
+    const node = frame.program.nodes[frame.nodeId];
+    if (!node) return;
+    const current = frame.items[frame.index];
+    if (frame.index < frame.items.length && current) {
+      this.eachValues.set(`${frame.scope}\0${frame.nodeId}`, current);
       this.stack.push({ ...frame, index: frame.index + 1 });
       this.follow(node, 'body');
     } else {

@@ -10,6 +10,7 @@ import {
   type WorldPatch,
 } from './history';
 import { decomposeTrs, identityMatrix, invertMatrix, multiplyMatrices, type Trs } from './matrix';
+import { migrateScene } from './migrate';
 import { buildRenderScene, composeTrs, type RenderInput, type RenderScene } from './render-scene';
 import {
   coerceComponentData,
@@ -39,7 +40,8 @@ export interface SceneEntityJson {
 }
 
 export interface SceneJson {
-  version: typeof SCENE_VERSION;
+  /** Envelope version. Older documents are migrated up to {@link SCENE_VERSION}. */
+  version: number;
   entities: SceneEntityJson[];
   /**
    * Generation to issue for every index below the high-water mark.
@@ -47,6 +49,11 @@ export interface SceneJson {
    * so a stale id cannot be revived by a load.
    */
   generations: number[];
+  /**
+   * Schema version of each component id when the scene was saved.
+   * Missing keys are treated as version 1.
+   */
+  componentVersions?: Record<string, number>;
 }
 
 export interface Query {
@@ -537,20 +544,26 @@ export class World {
 
   toScene(): SceneJson {
     const entities: SceneEntityJson[] = [];
+    const componentVersions: Record<string, number> = {};
     const seen = new Set<number>();
     const visit = (index: number): void => {
       if (seen.has(index)) return;
       const entity = this.entityAt(index);
       if (entity === undefined) return;
       seen.add(index);
-      entities.push(this.sceneEntity(entity));
+      entities.push(this.sceneEntity(entity, componentVersions));
       for (const child of this.children.get(index) ?? []) visit(child);
     };
     for (const root of this.roots) visit(root);
     for (const entity of this.pool.alive()) {
-      if (!seen.has(entityIndex(entity))) entities.push(this.sceneEntity(entity));
+      if (!seen.has(entityIndex(entity))) entities.push(this.sceneEntity(entity, componentVersions));
     }
-    return { version: SCENE_VERSION, entities, generations: this.pool.generationSnapshot() };
+    return {
+      version: SCENE_VERSION,
+      entities,
+      generations: this.pool.generationSnapshot(),
+      componentVersions,
+    };
   }
 
   loadScene(scene: SceneJson): void {
@@ -558,8 +571,10 @@ export class World {
     if (this.history.openDepth > 0) {
       throw new EcsError('invalid-value', 'Cannot load a scene inside a transaction');
     }
-    if (!scene || scene.version !== SCENE_VERSION || !Array.isArray(scene.entities)) {
-      throw new EcsError('invalid-scene', 'Scene JSON must be version 1 with an entities array');
+    const migrated = migrateScene(scene, SCENE_VERSION);
+    scene = migrated;
+    if (!Array.isArray(scene.entities)) {
+      throw new EcsError('invalid-scene', 'Scene JSON must include an entities array');
     }
     const live: Entity[] = [];
     for (const row of scene.entities) {
@@ -972,10 +987,11 @@ export class World {
     return trs;
   }
 
-  private sceneEntity(entity: Entity): SceneEntityJson {
+  private sceneEntity(entity: Entity, componentVersions: Record<string, number>): SceneEntityJson {
     const components: Record<string, unknown> = {};
     for (const key of this.componentKeys(entity)) {
       components[key] = this.get(entity, key);
+      componentVersions[key] = componentModel(key)?.version ?? 1;
     }
     const variables: Record<string, unknown> = {};
     const bucket = this.vars[entityIndex(entity)];

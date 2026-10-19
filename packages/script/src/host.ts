@@ -4,7 +4,18 @@ import { faultMessage, NODE_FAULT_CAP, type NodeFault } from './fault';
 import { callDefinedRun, callDefinedValue, type ScriptCall } from './scripts';
 import type { VariableScope } from './schema';
 import { valuesEqual } from './util';
-import type { EntityRef, ScriptWorld } from './world';
+import {
+  addEntityComponent,
+  componentNames as readComponentNames,
+  destroyEntity,
+  entityHasComponent,
+  entityList,
+  queryEntities,
+  removeEntityComponent,
+  spawnEntity,
+  type EntityRef,
+  type ScriptWorld,
+} from './world';
 
 export { defineScript } from './scripts';
 export type { DefineScriptOptions, DefinedScript, ScriptNodeContext } from './scripts';
@@ -75,6 +86,18 @@ export interface ScriptHost {
     read: (pin: string) => unknown,
   ): unknown;
   fault(nodeId: string, error: unknown): void;
+  spawn(): EntityRef;
+  destroy(entity: EntityRef): void;
+  addComponent(entity: EntityRef, component: string, value: unknown): void;
+  removeComponent(entity: EntityRef, component: string): void;
+  hasComponent(entity: EntityRef, component: string): boolean;
+  query(components: readonly string[]): EntityRef[];
+  componentNames(value: unknown): string[];
+  eachItems(value: unknown): EntityRef[];
+  rememberSpawn(scope: string, nodeId: string, entity: EntityRef): void;
+  spawned(scope: string, nodeId: string): EntityRef | undefined;
+  rememberEach(scope: string, nodeId: string, entity: EntityRef): void;
+  eachEntity(scope: string, nodeId: string): EntityRef | undefined;
 }
 
 interface DelayTimer {
@@ -104,6 +127,8 @@ class CompiledHost implements ScriptHost {
   private readonly graphVars = new Map<string, Map<string, unknown>>();
   private readonly entityVars = new Map<string, Map<string, unknown>>();
   private readonly loopValues = new Map<string, number>();
+  private readonly spawnValues = new Map<string, EntityRef>();
+  private readonly eachValues = new Map<string, EntityRef>();
   private readonly payloads = new Map<string, unknown>();
   private readonly listeners = new Map<string, Listener[]>();
   private readonly reading = new Set<string>();
@@ -142,6 +167,8 @@ class CompiledHost implements ScriptHost {
     this.graphVars.clear();
     this.entityVars.clear();
     this.loopValues.clear();
+    this.spawnValues.clear();
+    this.eachValues.clear();
     this.payloads.clear();
     this.delays = [];
     this.faults.length = 0;
@@ -178,6 +205,8 @@ class CompiledHost implements ScriptHost {
     this.graphVars.clear();
     this.entityVars.clear();
     this.loopValues.clear();
+    this.spawnValues.clear();
+    this.eachValues.clear();
     this.payloads.clear();
     this.faults.length = 0;
   }
@@ -361,6 +390,54 @@ class CompiledHost implements ScriptHost {
     read: (pin: string) => unknown,
   ): unknown {
     return callDefinedValue(typeId, this.scriptCall(scope, nodeId, read, () => undefined), pin);
+  }
+
+  spawn(): EntityRef {
+    return spawnEntity(this.world);
+  }
+
+  destroy(entity: EntityRef): void {
+    destroyEntity(this.world, entity);
+  }
+
+  addComponent(entity: EntityRef, component: string, value: unknown): void {
+    addEntityComponent(this.world, entity, component, value);
+  }
+
+  removeComponent(entity: EntityRef, component: string): void {
+    removeEntityComponent(this.world, entity, component);
+  }
+
+  hasComponent(entity: EntityRef, component: string): boolean {
+    return entityHasComponent(this.world, entity, component);
+  }
+
+  query(components: readonly string[]): EntityRef[] {
+    return queryEntities(this.world, components);
+  }
+
+  componentNames(value: unknown): string[] {
+    return readComponentNames(value);
+  }
+
+  eachItems(value: unknown): EntityRef[] {
+    return entityList(value);
+  }
+
+  rememberSpawn(scope: string, nodeId: string, entity: EntityRef): void {
+    this.spawnValues.set(`${scope}\0${nodeId}`, entity);
+  }
+
+  spawned(scope: string, nodeId: string): EntityRef | undefined {
+    return this.spawnValues.get(`${scope}\0${nodeId}`);
+  }
+
+  rememberEach(scope: string, nodeId: string, entity: EntityRef): void {
+    this.eachValues.set(`${scope}\0${nodeId}`, entity);
+  }
+
+  eachEntity(scope: string, nodeId: string): EntityRef | undefined {
+    return this.eachValues.get(`${scope}\0${nodeId}`);
   }
 
   fault(nodeId: string, error: unknown): void {
