@@ -187,6 +187,8 @@ The view implements `DebugSource`. Play mode loads the graph with `createScriptR
 
 Every committed edit is on the undo stack, and `getDocument()` is JSON. The panel writes that JSON to `localStorage` under `jurfi.editor.nodegraph` after each commit so a reload can restore it. The shell project file and `jurfi.editor.autosave` still store the world and layout only. A drag or a text field is not in the document until the gesture or the field commits.
 
+The same panel has a Blend tab. It mounts the canvas with `createBlendRegistry()` and `blendTreeAdapter()`, so pose ports use `POSE_DATA_TYPE` and the host document is a `BlendTree` (`version: 1`). Blend1D and Blend2D nodes edit their parameter ids and child thresholds on the node. The state-machine column edits parameters, states, transitions, and conditions. Those edits call `GraphController.edit`, which applies the change and pushes `EditorContext.undo`. Blend autosave is `jurfi.editor.blendtree`. Script mode is unchanged.
+
 ```bash
 pnpm --filter @jurfi/ui build
 pnpm --filter @jurfi/core build

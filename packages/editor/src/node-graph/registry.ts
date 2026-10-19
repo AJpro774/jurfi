@@ -1,5 +1,6 @@
 import { createBuiltinRegistry, createNodeRegistry, resolvePins } from '@jurfi/script';
 import type { GraphNode, NodeDef, NodeRegistry, PinSpec } from '@jurfi/script';
+import { blendFields, expandBlendPins } from './blend/pins';
 
 export type { NodeDef, NodeRegistry, PinSpec };
 export { createNodeRegistry, resolvePins };
@@ -40,14 +41,18 @@ export function nodeTitle(def: NodeDef | undefined, typeId: string): string {
   return leaf && leaf.length > 0 ? leaf : typeId;
 }
 
-export function nodeFields(def: NodeDef | undefined): readonly NodePropField[] {
+export function nodeFields(def: NodeDef | undefined, node?: GraphNode): readonly NodePropField[] {
   if (!def) return [];
+  const blend = blendFields(def.typeId, node?.props);
+  if (blend) return blend;
   return PROP_FIELDS[def.typeId] ?? [];
 }
 
 export function nodePins(node: GraphNode, registry: NodeRegistry): PinSpec[] {
   const def = registry.get(node.type);
   if (!def) return [];
+  const blend = expandBlendPins(node.type, node.props);
+  if (blend) return blend;
   return resolvePins(def, node.props);
 }
 

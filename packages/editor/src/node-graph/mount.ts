@@ -5,6 +5,10 @@ import { registerPanel } from '../registry';
 import { createUndoStack, type UndoStack } from '../undo';
 import { identityGraphAdapter, type GraphDocAdapter } from './adapter';
 import { createGraphController, type GraphController } from './controller';
+import { isBlendTree, blendTreeToGraph } from './blend/document';
+import { createDemoBlendTree } from './blend/demo';
+import { createBlendRegistry } from './blend/registry';
+import { mountBlendWorkspace, readBlendAutosave, writeBlendAutosave } from './blend/workspace';
 import { createDemoGraph } from './demo-document';
 import type { NodeRegistry } from './registry';
 import { createDefaultRegistry } from './registry';
@@ -81,6 +85,7 @@ interface GraphSession {
 }
 
 let session: GraphSession | null = null;
+let blendSession: GraphSession | null = null;
 
 function readGraphAutosave(): GraphDoc | null {
   try {
@@ -107,21 +112,83 @@ function writeGraphAutosave(doc: GraphDoc): void {
  * Call this before `createEditor` so the placeholder is never installed.
  * The same graph controller stays bound to one undo stack across tab remounts.
  */
+type GraphDomain = 'script' | 'blend';
+
+let domain: GraphDomain = 'script';
+
 export function registerNodeGraphPanel(): () => void {
   const registry = createDefaultRegistry();
   return registerPanel({
     id: PANEL.nodeGraph,
     title: 'Node Graph',
     mount(el, ctx) {
-      const controller = controllerFor(ctx, registry);
-      const view = new NodeGraphView(el, controller, registry, writeGraphAutosave);
-      const debug = attachPlayDebug(ctx, view);
+      const doc = el.ownerDocument;
+      const shell = doc.createElement('div');
+      shell.className = 'ng-domain';
+      const bar = doc.createElement('div');
+      bar.className = 'ng-domain-bar';
+      bar.setAttribute('role', 'tablist');
+      bar.setAttribute('aria-label', 'Graph domain');
+      const scriptButton = domainButton(doc, 'Script');
+      const blendButton = domainButton(doc, 'Blend');
+      bar.append(scriptButton, blendButton);
+      const host = doc.createElement('div');
+      host.className = 'ng-domain-host';
+      shell.append(bar, host);
+      el.replaceChildren(shell);
+
+      let stopDebug: (() => void) | undefined;
+      let active: { destroy(): void } | undefined;
+
+      const show = (next: GraphDomain): void => {
+        stopDebug?.();
+        stopDebug = undefined;
+        active?.destroy();
+        domain = next;
+        scriptButton.setAttribute('aria-selected', next === 'script' ? 'true' : 'false');
+        blendButton.setAttribute('aria-selected', next === 'blend' ? 'true' : 'false');
+        if (next === 'script') {
+          const controller = controllerFor(ctx, registry);
+          const view = new NodeGraphView(host, controller, registry, writeGraphAutosave);
+          stopDebug = attachPlayDebug(ctx, view);
+          active = view;
+          return;
+        }
+        active = mountBlendWorkspace(host, blendControllerFor(ctx), writeBlendAutosave);
+      };
+
+      scriptButton.addEventListener('click', () => show('script'));
+      blendButton.addEventListener('click', () => show('blend'));
+      show(domain);
       return () => {
-        debug();
-        view.destroy();
+        stopDebug?.();
+        active?.destroy();
+        shell.remove();
       };
     },
   });
+}
+
+function domainButton(doc: Document, label: string): HTMLButtonElement {
+  const button = doc.createElement('button');
+  button.type = 'button';
+  button.className = 'ng-domain-button';
+  button.textContent = label;
+  button.setAttribute('role', 'tab');
+  return button;
+}
+
+function blendControllerFor(ctx: EditorContext): GraphController {
+  if (blendSession && blendSession.undo === ctx.undo) return blendSession.controller;
+  const saved = readBlendAutosave();
+  const tree = isBlendTree(saved) ? saved : createDemoBlendTree();
+  const controller = createGraphController({
+    document: blendTreeToGraph(tree),
+    registry: createBlendRegistry(),
+    undo: ctx.undo,
+  });
+  blendSession = { undo: ctx.undo, controller, registry: controller.registry };
+  return controller;
 }
 
 function controllerFor(ctx: EditorContext, registry: NodeRegistry): GraphController {
