@@ -40,7 +40,26 @@ export { Light, Light2D, Transform } from './components';
 export type { WorldEventMap, WorldEventName } from './events';
 export { WorldEventBus } from './events';
 export type { EntitySnapshot, WorldChange, WorldPatch } from './history';
-export type { Query, SceneEntityJson, SceneJson, WorldPlugin, ComponentRef, ComponentChange } from './world';
+export type { MigrationFn, PrefabJson, PrefabNode } from './migrate';
+export {
+  PREFAB_VERSION,
+  migrateComponent,
+  migratePrefab,
+  migrateScene,
+  registerMigration,
+  registerPrefabMigration,
+  registerSceneMigration,
+} from './migrate';
+export { instantiatePrefab } from './prefab';
+export type {
+  Query,
+  SceneEntityJson,
+  SceneJson,
+  WorldPlugin,
+  ComponentRef,
+  ComponentChange,
+  SetParentOptions,
+} from './world';
 export { SCENE_VERSION, World, createWorld, resolveEntityId } from './world';
 
 export type { RenderScene } from './render-scene';

@@ -190,7 +190,7 @@ export function mountScene(options: SceneOptions): SceneHandle {
   let dragAbsent = new Set<string>();
   let playing = ctx.getPlayState() !== 'editing';
   let idBuffer: IdBufferPicker | null = null;
-  let renderer: ReturnType<typeof createRenderer> | null = null;
+  let renderer: Awaited<ReturnType<typeof createRenderer>> | null = null;
   let backendName = 'Starting';
   let disposed = false;
   let looping = false;
@@ -759,18 +759,13 @@ export function mountScene(options: SceneOptions): SceneHandle {
 }
 
 async function bootRenderer(canvas: HTMLCanvasElement, preferred: ReturnType<typeof detectBackend>): Promise<{
-  renderer: ReturnType<typeof createRenderer>;
+  renderer: Awaited<ReturnType<typeof createRenderer>>;
   canvas: HTMLCanvasElement;
   backend: string;
 }> {
   try {
-    const renderer = createRenderer(canvas, preferred);
-    try {
-      await maybeInit(renderer);
-    } catch (error) {
-      renderer.dispose();
-      throw error;
-    }
+    // createRenderer awaits WebGPURenderer.init() before resolving, including the WebGL2 path.
+    const renderer = await createRenderer(canvas, preferred);
     return { renderer, canvas, backend: preferred === 'webgpu' ? 'WebGPU' : 'WebGL2' };
   } catch (error) {
     if (preferred === 'webgl2') throw error;
@@ -779,16 +774,9 @@ async function bootRenderer(canvas: HTMLCanvasElement, preferred: ReturnType<typ
     const label = canvas.getAttribute('aria-label');
     if (label) next.setAttribute('aria-label', label);
     canvas.replaceWith(next);
-    const renderer = createRenderer(next, 'webgl2');
-    await maybeInit(renderer);
+    const renderer = await createRenderer(next, 'webgl2');
     return { renderer, canvas: next, backend: 'WebGL2' };
   }
-}
-
-async function maybeInit(renderer: object): Promise<void> {
-  const init = Reflect.get(renderer, 'init');
-  if (typeof init !== 'function') return;
-  await init.call(renderer);
 }
 
 /** WebGPURenderer can init successfully and still fall back to a WebGL backend. */
