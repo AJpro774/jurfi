@@ -19,5 +19,13 @@ export default defineConfig({
     ],
   },
   server: { host: true, port: 5173 },
-  build: { target: 'esnext' },
+  build: {
+    target: 'esnext',
+    rollupOptions: {
+      input: {
+        main: fileURLToPath(new URL('./index.html', import.meta.url)),
+        timeline: fileURLToPath(new URL('./timeline.html', import.meta.url)),
+      },
+    },
+  },
 });

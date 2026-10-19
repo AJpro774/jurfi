@@ -1,0 +1,263 @@
+.tl-host {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.tl-root {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--panel-bg);
+  color: var(--panel-fg);
+  font: var(--ref-font-size-2) / var(--ref-font-lh-tight) var(--ref-font-sans);
+  user-select: none;
+}
+
+.tl-root button,
+.tl-root input,
+.tl-root select {
+  font: inherit;
+  color: var(--text-1);
+}
+
+.tl-root button:focus-visible,
+.tl-root input:focus-visible,
+.tl-root select:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.tl-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  padding: var(--space-2);
+  background: var(--panel-header-bg);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.tl-btn {
+  height: var(--btn-h);
+  padding-inline: var(--btn-px);
+  border: 1px solid transparent;
+  border-radius: var(--btn-radius);
+  background: transparent;
+  cursor: pointer;
+}
+
+.tl-btn:hover {
+  background: var(--surface-3);
+}
+
+.tl-btn[aria-pressed='true'] {
+  background: var(--surface-3);
+  border-color: var(--border-strong);
+}
+
+.tl-field {
+  height: var(--field-h);
+  padding-inline: var(--field-px);
+  border: 1px solid var(--field-border);
+  border-radius: var(--field-radius);
+  background: var(--field-bg);
+}
+
+.tl-field:focus {
+  border-color: var(--field-border-focus);
+}
+
+.tl-fps {
+  color: var(--text-3);
+}
+
+.tl-body {
+  display: grid;
+  flex: 1;
+  grid-template-columns: 240px minmax(0, 1fr);
+  min-height: 0;
+}
+
+.tl-labels {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--surface-1);
+  border-right: 1px solid var(--border-subtle);
+}
+
+.tl-label-head,
+.tl-ruler {
+  display: flex;
+  flex: none;
+  align-items: center;
+  padding-inline: var(--space-2);
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-2);
+}
+
+.tl-label-clip {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.tl-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.tl-label.is-active {
+  background: var(--surface-3);
+}
+
+.tl-name {
+  flex: 1;
+  min-width: 0;
+  height: var(--btn-h);
+  padding-inline: var(--space-1);
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: var(--btn-radius);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tl-name:hover {
+  background: var(--surface-3);
+}
+
+.tl-label.is-muted .tl-name {
+  opacity: 0.45;
+}
+
+.tl-twist,
+.tl-flag {
+  width: var(--density-row-h);
+  height: var(--btn-h);
+  padding-inline: 0;
+  border: 1px solid transparent;
+  border-radius: var(--btn-radius);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.tl-twist:hover,
+.tl-flag:hover,
+.tl-flag[aria-pressed='true'] {
+  background: var(--surface-3);
+}
+
+.tl-flag[aria-pressed='true'] {
+  border-color: var(--border-strong);
+}
+
+.tl-sheet {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  background: var(--surface-0);
+}
+
+.tl-canvas {
+  position: relative;
+  min-width: 100%;
+}
+
+.tl-ruler {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  width: 100%;
+  padding-inline: 0;
+  cursor: ew-resize;
+}
+
+.tl-plot {
+  position: absolute;
+  left: 0;
+  display: block;
+}
+
+.tl-playhead {
+  position: absolute;
+  z-index: 1;
+  width: 1px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.tl-key {
+  fill: var(--surface-0);
+  stroke-width: 1.5;
+}
+
+.tl-key.is-selected {
+  fill: var(--accent);
+  stroke: var(--text-1);
+}
+
+.tl-event {
+  fill: var(--accent);
+  stroke: var(--accent-contrast);
+}
+
+.tl-event.is-selected {
+  stroke-width: 2;
+}
+
+.tl-marquee {
+  fill: var(--accent);
+  stroke: var(--accent);
+  opacity: 0.25;
+}
+
+.tl-plot [data-muted='true'] {
+  opacity: 0.4;
+}
+
+.tl-footer {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  min-height: var(--density-row-h);
+  padding-inline: var(--space-2);
+  overflow: hidden;
+  background: var(--surface-2);
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-2);
+}
+
+.tl-readout,
+.tl-events {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tl-errors {
+  color: var(--danger);
+}
+
+.tl-probe {
+  position: absolute;
+  height: var(--density-row-h);
+  visibility: hidden;
+}
+
+.tl-probe.is-curve {
+  height: calc(var(--density-row-h) * 2);
+}
