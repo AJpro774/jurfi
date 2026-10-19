@@ -1,8 +1,9 @@
+import { createEditorWorld } from '@jurfi/core';
 import { createEditorBus, type EditorBus, type GizmoMode, type PlayState } from './bus';
 import { createCommandRegistry, type CommandRegistry } from './commands';
 import { createSelection, type Selection } from './selection';
 import { createUndoStack, type UndoStack } from './undo';
-import { createWorld, type EditorWorld, type WorldSnapshot } from './world';
+import { createDefaultSnapshot, type EditorWorld, type WorldSnapshot } from './world';
 
 /**
  * Handle passed to every panel `mount` and to editor commands.
@@ -11,7 +12,7 @@ import { createWorld, type EditorWorld, type WorldSnapshot } from './world';
  * `undo` is the reversible edit stack (`push` / `undo` / `redo`).
  */
 export interface EditorContext {
-  /** Serializable scene document. `@jurfi/core` does not export an ECS world yet; this is the document panels read and write. */
+  /** Scene world. The default is the core ECS (`createEditorWorld`); string ids are stable aliases. */
   readonly world: EditorWorld;
   readonly selection: Selection;
   readonly undo: UndoStack;
@@ -33,8 +34,15 @@ export interface EditorContextOptions {
   world?: EditorWorld;
 }
 
+function createDefaultEditorWorld(): EditorWorld {
+  const world = createEditorWorld();
+  world.deserialize(createDefaultSnapshot());
+  world.ecs.clearHistory();
+  return world;
+}
+
 export function createEditorContext(options: EditorContextOptions = {}): EditorContext {
-  const world = options.world ?? createWorld();
+  const world = options.world ?? createDefaultEditorWorld();
   const bus = createEditorBus();
   const selection = createSelection();
   const undo = createUndoStack();
