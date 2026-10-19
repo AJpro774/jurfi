@@ -155,7 +155,7 @@ Other string event names are allowed; their payload is `unknown` unless you agre
 
 ### Play mode
 
-`play()` stores `world.serialize()` the first time the session leaves editing, then sets the state to `playing`. `pause()` only applies while playing. `play()` from paused resumes and keeps the original snapshot. `stop()` deserializes that snapshot, clears the undo stack, and returns to `editing`. `step()` snapshots if needed, forces `paused`, and emits `play:step`. Nothing in the shell ticks a game loop; the snapshot boundary is the scaffold a runtime can hook.
+`play()` stores `world.serialize()` the first time the session leaves editing, then sets the state to `playing`. `pause()` only applies while playing. `play()` from paused resumes and keeps the original snapshot. `stop()` deserializes that snapshot, clears the undo stack, and returns to `editing`. When the world is the `@jurfi/core` adapter, that snapshot includes packed entity ids, per-entity variables, and the generation table, so `stop()` restores the same numeric ids and variables that were current when play began. `step()` snapshots if needed, forces `paused`, and emits `play:step`. Nothing in the shell ticks a game loop; the snapshot boundary is the scaffold a runtime can hook.
 
 ## Shell
 
