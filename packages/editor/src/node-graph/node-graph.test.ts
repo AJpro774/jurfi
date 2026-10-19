@@ -285,7 +285,7 @@ describe('registry, geometry, and debug values', () => {
     const registry = createDefaultRegistry();
     expect(searchNodes(registry, 'fires once').map((item) => item.typeId)).toEqual(['core/OnStart']);
     expect(searchNodes(registry, 'FLOW').some((item) => item.typeId === 'core/Branch')).toBe(true);
-    expect(searchNodes(registry, 'core/Add').map((item) => item.typeId)).toEqual(['core/Add']);
+    expect(searchNodes(registry, 'core/Add').map((item) => item.typeId)).toEqual(['core/Add', 'core/AddComponent']);
     expect(searchNodes(registry, 'does-not-exist')).toEqual([]);
     expect(registry.get('core/Add')?.pins.map((pin) => pin.name)).toEqual(['a', 'b', 'result']);
   });
