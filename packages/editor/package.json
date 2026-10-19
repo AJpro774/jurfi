@@ -10,6 +10,7 @@
   "files": [
     "dist",
     "src/shell.css",
+    "src/panels.css",
     "src/timeline/timeline.css"
   ],
   "main": "./dist/index.js",
@@ -20,6 +21,7 @@
       "import": "./dist/index.js"
     },
     "./shell.css": "./src/shell.css",
+    "./panels.css": "./src/panels.css",
     "./timeline.css": "./src/timeline/timeline.css"
   },
   "scripts": {
@@ -40,6 +42,7 @@
     "tsup": "^9.0.0",
     "typescript": "~5.9.3",
     "vitest": "^5.0.5",
+    "happy-dom": "^20.0.10",
     "eslint": "^9.39.0",
     "@types/three": "^0.186.0",
     "@jurfi/tsconfig": "workspace:*",

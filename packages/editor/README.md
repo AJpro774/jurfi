@@ -2,7 +2,7 @@
 
 Editor shell for Jurfi. Panel packages (`viewport`, hierarchy, inspector, asset browser, node graph, timeline) register a view and talk to the editor through `EditorContext`. Games and samples must never import this package.
 
-`@jurfi/core` does not export an ECS world yet. `EditorContext.world` is the editor's JSON scene document (`EditorWorld`): entities with a name, a parent, and a JSON component bag. Save/load, undo, and play mode all snapshot that document. When core ships an ECS, a world that implements `EditorWorld` can be passed to `createEditorContext({ world })`.
+`@jurfi/core` exports the ECS world. `createEditorWorld()` implements `EditorWorld`: string ids over generational entities, with `defineComponent` data stored in the ECS and other bag keys kept as JSON. `EditorContext.selection` is the ordered id list the viewport also reads and writes. Hierarchy and inspector subscribe to that same store.
 
 ## Register a panel
 
@@ -44,6 +44,10 @@ Placeholder ids the shell installs when nobody has claimed them yet:
 | `timeline` | Timeline | Center |
 | `inspector` | Inspector | Right |
 | `console` | Console | Bottom dock |
+
+`registerContentPanels()` replaces the `hierarchy`, `inspector`, and `assets` placeholders. Call it before `createEditor`, along with `registerViewportPanel()`, `registerNodeGraphPanel()`, and `registerTimelinePanel()`. The editor app opens `createEditorWorld()` from `@jurfi/core`, loads `createDemoSnapshot()`, and calls `seedDemoLibrary(ctx)`.
+
+The inspector builds component editors from `@jurfi/core` `defineComponent` schemas (`Transform`, `Light`, `Light2D`, and any later component). Editing `Transform` also writes the viewport's `components.transform` document, which is the shape the scene view and gizmos read. `components.mesh.shape` is `box`, `sphere`, or `plane`. Visibility and lock stay in `jurfi.flags`. The asset library is session-only and is not part of the project file.
 
 ## EditorContext
 

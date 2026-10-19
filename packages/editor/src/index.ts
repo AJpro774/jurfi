@@ -59,6 +59,9 @@ export type { CreateEditorOptions, Editor } from './shell';
 
 export { ensurePlaceholderPanels } from './panels';
 
+export { registerContentPanels } from './content/register';
+export { createDemoSnapshot, seedDemoLibrary } from './content/demo';
+
 export { registerTimelinePanel } from './timeline/register';
 export { createSampleClip } from './timeline/sample-clip';
 
